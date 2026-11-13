@@ -23,6 +23,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSettings>
+#include "keystore.h"
 #include <QSlider>
 #include <QStatusBar>
 #include <QStyledItemDelegate>
@@ -351,22 +352,25 @@ void MainWindow::claudeSettings() {
     QSettings st("SDP", "ShipEditor");
     QDialog d(this); d.setWindowTitle("Распознавание Claude");
     auto* f = new QFormLayout(&d);
-    f->addRow(new QLabel("Картинка подложки отправляется в Anthropic API (нужен интернет).\nКлюч хранится в настройках этой программы на этом компьютере."));
-    auto* key = new QLineEdit(st.value("apiKey").toString()); key->setEchoMode(QLineEdit::Password); key->setPlaceholderText("sk-ant-…");
+    keystore::migrateFromSettings();
+    f->addRow(new QLabel("Картинка подложки отправляется в Anthropic API (нужен интернет).\nКлюч хранится " + keystore::where() + ".\nЧтобы удалить ключ, очистите поле и нажмите «Сохранить»."));
+    auto* key = new QLineEdit(keystore::load()); key->setEchoMode(QLineEdit::Password); key->setPlaceholderText("sk-ant-…");
     auto* model = new QLineEdit(st.value("model", "claude-sonnet-5-5").toString());
     f->addRow("Ключ API", key); f->addRow("Модель", model);
     auto* bb = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel); f->addRow(bb);
     connect(bb, &QDialogButtonBox::accepted, &d, &QDialog::accept); connect(bb, &QDialogButtonBox::rejected, &d, &QDialog::reject);
     if (d.exec() != QDialog::Accepted) return;
-    st.setValue("apiKey", key->text().trimmed()); st.setValue("model", model->text().trimmed().isEmpty() ? "claude-sonnet-5-5" : model->text().trimmed());
+    if (!keystore::save(key->text().trimmed())) say("⚠ Ключ не удалось сохранить в хранилище системы: он будет действовать до закрытия программы.");
+    st.setValue("model", model->text().trimmed().isEmpty() ? "claude-sonnet-5-5" : model->text().trimmed());
     say("Настройки распознавания сохранены.");
 }
 void MainWindow::recognize(int v) {
     ViewEdit* ve = views_[v];
     if (!ve->hasImage()) { say("Сначала загрузите подложку."); return; }
     QSettings st("SDP", "ShipEditor");
-    const QString key = st.value("apiKey").toString(), model = st.value("model", "claude-sonnet-5-5").toString();
-    if (key.isEmpty()) { claudeSettings(); if (QSettings("SDP", "ShipEditor").value("apiKey").toString().isEmpty()) return; recognize(v); return; }
+    keystore::migrateFromSettings();
+    const QString key = keystore::load(), model = st.value("model", "claude-sonnet-5-5").toString();
+    if (key.isEmpty()) { claudeSettings(); if (keystore::load().isEmpty()) return; recognize(v); return; }
     // уменьшение до 1568 точек по большей стороне (больше Claude всё равно не использует)
     const QImage& src = ve->image(); const double k = std::min(1.0, 1568.0 / std::max(src.width(), src.height()));
     const QImage img = k < 1 ? src.scaled(int(src.width() * k), int(src.height() * k), Qt::KeepAspectRatio, Qt::SmoothTransformation) : src;

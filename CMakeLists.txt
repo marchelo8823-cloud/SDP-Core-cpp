@@ -46,7 +46,17 @@ if(NOT WIN32)   # используют POSIX: виртуальный COM-пор�
 endif()
 # рабочий цикл и ввод данных судна
 dp_test(core_test ${D}/Данные_судна_пример.xlsx ${D}/Данные_имитатора_пример.xlsx ${CMAKE_CURRENT_SOURCE_DIR}/tests/books/нет_упора.xlsx)
+dp_test(capability_test ${D}/Данные_судна_пример.xlsx)
 dp_test(shipbook_test ${D}/Данные_судна_шаблон.xlsx ${D}/Данные_судна_пример.xlsx ${CMAKE_CURRENT_SOURCE_DIR}/tests/books ${D}/Данные_имитатора_шаблон.xlsx ${D}/Данные_имитатора_пример.xlsx)
+
+# сценарии рабочей программы с критериями «#! ...» в самих файлах
+file(GLOB DP_SCENARIOS ${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/*.txt)
+foreach(s ${DP_SCENARIOS})
+  get_filename_component(n ${s} NAME_WE)
+  add_test(NAME сценарий_${n} COMMAND ${CMAKE_COMMAND} -DSDP_RUN=$<TARGET_FILE:sdp_run> -DSCEN=${s} -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_scenario.cmake
+           WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+  set_tests_properties(сценарий_${n} PROPERTIES TIMEOUT 400)
+endforeach()
 
 # Редактор данных судна на Qt 6 (необязательно): cmake -S . -B build -DSDP_BUILD_EDITOR=ON
 option(SDP_BUILD_EDITOR "Собрать редактор данных судна sdp_ship (нужен Qt 6)" OFF)

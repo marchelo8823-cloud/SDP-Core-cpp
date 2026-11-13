@@ -167,6 +167,32 @@ void ViewEdit::setMarkers(const QVector<Marker>& m) {
         auto* t = new QGraphicsSimpleTextItem(k.id, g); t->setScale(0.2); t->setPos(1.3, -1.6); t->setBrush(QColor(40, 40, 40));
         markerItems_.push_back(g);
     }
+    layoutLabels();
+}
+
+// Подпись ставится справа от метки; если место занято другой подписью или меткой — выше или ниже, ступенями по высоте строки.
+void ViewEdit::layoutLabels() {
+    std::vector<QRectF> busy;
+    for (auto* g : markerItems_) { const QPointF c = mapFromScene(g->pos()); busy.push_back(QRectF(c - QPointF(5, 5), QSizeF(10, 10))); }
+    for (auto* g : markerItems_) {
+        if (g->childItems().isEmpty()) continue;
+        auto* t = g->childItems().first();
+        const double k = g->scale() * t->scale();                       // пикселей экрана на единицу текста
+        const QRectF b = t->boundingRect();
+        const QSizeF sz(b.width() * k, b.height() * k);
+        const QPointF c = mapFromScene(g->pos());
+        const double step = sz.height() + 1;
+        QPointF best(6.5, -8);
+        for (int i = 0; i < 12; ++i) {
+            const double dy = -8 + ((i + 1) / 2) * step * (i % 2 ? -1 : 1);
+            const QRectF r(c + QPointF(6.5, dy), sz);
+            bool hit = false;
+            for (const auto& q : busy) if (q.intersects(r)) { hit = true; break; }
+            if (!hit) { best = QPointF(6.5, dy); break; }
+        }
+        busy.push_back(QRectF(c + best, sz));
+        t->setPos(best / g->scale());
+    }
 }
 
 // ---------------------------------------------------------------- схема по данным корпуса
@@ -319,6 +345,7 @@ void ViewEdit::wheelEvent(QWheelEvent* e) {
     const QPointF after = mapToScene(e->position().toPoint());
     translate(after.x() - before.x(), after.y() - before.y());
     updateHandles();
+    layoutLabels();
 }
 void ViewEdit::fit() {
     QRectF r;
@@ -331,6 +358,7 @@ void ViewEdit::fit() {
     r.adjust(-r.width() * 0.08 - 2, -r.height() * 0.12 - 2, r.width() * 0.08 + 2, r.height() * 0.12 + 2);
     fitInView(r, Qt::KeepAspectRatio);
     updateHandles();
+    layoutLabels();
 }
 
 // ---------------------------------------------------------------- сетка и подписи

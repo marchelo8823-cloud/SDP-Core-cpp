@@ -37,10 +37,10 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           path: _base
           sparse-checkout: |
@@ -70,17 +70,17 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           path: _base
           sparse-checkout: |
             CLAUDE.md
             .github/agents
           persist-credentials: false
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake g++ qt6-base-dev libgl1-mesa-dev
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake g++ qt6-base-dev libgl1-mesa-dev libsecret-1-dev
       - run: tools/ci_build.sh || true
       - uses: anthropics/claude-code-action@v1
         env:
@@ -97,7 +97,7 @@ jobs:
             --model ${{ env.MODEL }}
             --max-turns 40
             --allowedTools Read,Glob,Grep,Write(test-out/**),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue comment:*),Bash(ctest:*),Bash(./build/sdp_run:*),Bash(git log:*)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: test-out-issue-${{ github.event.issue.number }}
@@ -113,15 +113,15 @@ jobs:
       pull-requests: write
       issues: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
           path: _base
           sparse-checkout: |
             CLAUDE.md
             .github/agents
           persist-credentials: false
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake g++ qt6-base-dev libgl1-mesa-dev
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake g++ qt6-base-dev libgl1-mesa-dev libsecret-1-dev
       - name: Git от имени агента
         run: git config user.name "СДП агент 6" && git config user.email "agent6@users.noreply.github.com"
       - uses: anthropics/claude-code-action@v1

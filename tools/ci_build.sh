@@ -15,7 +15,7 @@ if [ $BUILD -eq 0 ]; then
     timeout 300 ./build/sdp_run --script "$s" --status 30 > "test-out/сценарий_$n.txt" 2>&1 || echo "(сценарий завершён с кодом $?)" >> "test-out/сценарий_$n.txt"
   done
   if [ -x build/shipedit/sdp_ship ]; then
-    for t in 0 1 2 3 8; do
+    for t in 0 1 2 3 4 5 6 7; do
       QT_QPA_PLATFORM=offscreen timeout 60 ./build/shipedit/sdp_ship "data/чертёж/Данные_судна_с_чертежом.xlsx" --tab $t --screenshot "test-out/снимок_вкладка_$t.png" >/dev/null 2>&1 || true
     done
   fi

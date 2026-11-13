@@ -68,6 +68,7 @@ protected:
     void keyPressEvent(QKeyEvent* e) override;
 
 private:
+    void layoutLabels();   // разнести подписи меток, чтобы не налезали друг на друга (в пикселях экрана)
     QPointF toScene(double a, double b) const { return {a, view_ == dp::design::Top ? b : -b}; }
     void fromScene(QPointF s, double& a, double& b) const { a = s.x(); b = view_ == dp::design::Top ? s.y() : -s.y(); }
     QGraphicsPolygonItem* makeShape(const QPolygonF& poly, const QString& name);
