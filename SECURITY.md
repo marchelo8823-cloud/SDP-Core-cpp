@@ -1,0 +1,26 @@
+# Защита проекта СДП
+
+## Что уже сделано в репозитории
+- Агенты запускаются только действиями владельца (`github.actor == github.repository_owner`); события от других людей и ботов агентов не запускают.
+- Агенты не пишут в основную ветку: тестировщик и координатор только читают и комментируют, администратор работает в ветках `agent/admin-…` и открывает предложение изменений.
+- Набор разрешённых агенту команд ограничен (`--allowedTools` в `.github/workflows/agent-*.yml`).
+- Правила агентов при проверке берутся из основной ветки (`_base/`): проверяемое изменение не может подменить правила своей проверки.
+- В правилах агентов (`.github/agents/common.md`): содержимое файлов, комментариев, веб-страниц — данные, а не указания; секреты не выводятся; подозрительное оформляется задачей с меткой `безопасность`.
+- `CODEOWNERS`: каждое изменение требует одобрения владельца.
+
+## Что должен включить владелец (в настройках GitHub)
+1. **Закрыть репозиторий:** Settings → General → Danger Zone → Change repository visibility → Private.
+2. **Защитить основную ветку:** Settings → Branches (или Rules → Rulesets) → правило для `main`:
+   - Require a pull request before merging, Require approvals: 1, Require review from Code Owners;
+   - Require status checks to pass: «Сборка и тесты / build»;
+   - Block force pushes; Restrict deletions.
+3. **Ключ API:** Settings → Secrets and variables → Actions → New repository secret, имя `ANTHROPIC_API_KEY`. Значение никому не пересылать.
+4. **Модель агентов (необязательно):** там же, вкладка Variables, `SDP_AGENT_MODEL`.
+5. **Ограничить Actions:** Settings → Actions → General → Allow … actions: разрешить только действия GitHub и `anthropics/claude-code-action`; Fork pull request workflows — Require approval for all outside collaborators.
+6. **Двухфакторный вход** в учётную запись GitHub.
+7. **Метки:** Actions → «Агенты: задачи» → Run workflow.
+
+## ⚠ Пределы
+- Полной защиты от копирования не бывает: закрытый репозиторий и доступ по списку защищают исходники, лицензия и подпись сборок защищают установку, но не от того, у кого есть доступ.
+- Защита агентов от чужих указаний («инъекций») снижает риск, но не исключает его: результаты агентов всегда принимает человек.
+- Каждый запуск агента расходует токены по ключу владельца.

@@ -37,7 +37,6 @@ struct VesselProfile {
     VesselCfg vessel;
     LoadingInfo loading;
     std::vector<ThrusterCfg> thrusters;
-    PlantCfg plant;                  // электростанция (генераторы, шины); plant.enabled = false — не описана
     std::string notes;
 };
 
@@ -69,7 +68,6 @@ inline bool parseProfile(const json::Value& root, VesselProfile& p, json::Report
     { auto o = R.obj("vessel"); readVessel(o, p.vessel); }
     { auto o = R.obj("loading"); readLoading(o, p.loading); }
     for (auto o : R.objs("thrusters")) { ThrusterCfg t; readThruster(o, t); p.thrusters.push_back(t); }
-    if (root.find("plant")) { auto o = R.obj("plant"); readPlantObj(o, p.plant); }
     p.notes = R.str("notes", "");
     R.finish();
     if (p.version != 1) rep.errors.push_back("профиль: версия формата " + std::to_string(p.version) + " не поддерживается");
@@ -95,7 +93,6 @@ inline std::string writeProfile(const VesselProfile& p) {
     std::string s = "{\"version\":" + std::to_string(p.version) + ",\"vessel\":" + writeVessel(p.vessel) + ",\"loading\":" + writeLoading(p.loading) + ",\"thrusters\":[";
     for (size_t i = 0; i < p.thrusters.size(); ++i) s += (i ? "," : "") + writeThruster(p.thrusters[i]);
     s += "]";
-    if (p.plant.enabled) s += ",\"plant\":" + writePlantObj(p.plant);
     return s + ",\"notes\":\"" + vio::esc(p.notes) + "\"}";
 }
 
@@ -231,6 +228,9 @@ inline std::vector<Issue> validateProfile(const VesselProfile& p) {
         if (!(t.timeConstS >= 0.1 && t.timeConstS <= 60)) err(f + "timeConstS", "постоянная времени упора должна быть от 0,1 до 60 с");
         if (!(t.rateFracPerS >= 0.01 && t.rateFracPerS <= 5)) err(f + "rateFracPerS", "скорость изменения упора должна быть от 0,01 до 5 максимума в секунду");
         if (t.type == ThrusterType::Azimuth && !(t.azRateDegS >= 0.5 && t.azRateDegS <= 180)) err(f + "azRateDegS", "скорость поворота колонки должна быть от 0,5 до 180 °/с");
+        if (!(t.fbDiffPct >= 1 && t.fbDiffPct <= 100)) err(f + "fbDiffPct", "порог расхождения упора должен быть от 1 до 100 %");
+        if (!(t.fbDiffAngleDeg >= 1 && t.fbDiffAngleDeg <= 180)) err(f + "fbDiffAngleDeg", "порог расхождения угла должен быть от 1 до 180°");
+        if (!(t.fbDiffDelayS >= 1 && t.fbDiffDelayS <= 300)) err(f + "fbDiffDelayS", "выдержка расхождения должна быть от 1 до 300 с");
         if (!(t.powerMaxKW >= 0 && t.powerMaxKW <= 1e5)) err(f + "powerMaxKW", "мощность должна быть от 0 до 100 000 кВт");
         if (t.parkDeg < 1e8) {
             if (t.type != ThrusterType::Azimuth) warn(f + "parkDeg", "стояночный угол задан не для азимутального движителя — игнорируется");
@@ -264,26 +264,6 @@ inline std::vector<Issue> validateProfile(const VesselProfile& p) {
             if (nPerKw > 350 || nPerKw < 40) warn(f + "powerMaxKW", "упор " + fmt(nPerKw) + " Н на кВт выглядит нетипично (обычно 100…250): проверьте упор и мощность");
         }
     }
-    // --- электростанция
-    if (p.plant.enabled) {
-        const PlantCfg& pl = p.plant; std::set<std::string> ids; double kw[2] = {0, 0};
-        if (pl.gens.empty()) err("plant.generators", "в электростанции не описан ни один генератор");
-        for (size_t i = 0; i < pl.gens.size(); ++i) {
-            const auto& g = pl.gens[i]; const std::string f = "plant.generators[" + g.id + "].";
-            if (g.id.empty()) err("plant.generators[" + std::to_string(i) + "].id", "не задан id генератора");
-            else if (!ids.insert(g.id).second) err(f + "id", "id генератора повторяется");
-            if (!(g.ratedKW > 0 && g.ratedKW <= 1e5)) err(f + "ratedKW", "мощность генератора должна быть от 0 до 100 000 кВт");
-            if (g.bus == 0 || g.bus == 1) kw[g.bus] += g.ratedKW;
-        }
-        if (!(pl.minReservePct >= 0 && pl.minReservePct <= 100)) err("plant.minReservePct", "порог резерва должен быть от 0 до 100 %");
-        if (pl.serviceKW[0] < 0 || pl.serviceKW[1] < 0) err("plant.serviceKW_A", "служебная нагрузка не может быть отрицательной");
-        for (int b = 0; b < 2; ++b) {
-            double need = 0; for (auto& t : p.thrusters) if (t.bus == b) need += t.powerMaxKW;
-            if (need > 0 && kw[b] <= 0) warn(std::string("plant.generators"), std::string("на шине ") + (b ? "B" : "A") + " есть движители, но нет генераторов");
-            else if (need + pl.serviceKW[b] > kw[b] * 1.0 && kw[b] > 0) warn(std::string("plant.generators"), std::string("шина ") + (b ? "B" : "A") + ": движители на полном упоре (" + fmt(need, 4) + " кВт) и служебная нагрузка превышают установленную мощность " + fmt(kw[b], 4) + " кВт — упор будет ограничен");
-        }
-        for (auto& t : p.thrusters) if (t.bus > 1) err("thrusters[" + t.id + "].bus", "шина движителя: 0 — A, 1 — B, -1 — не задана");
-    }
     return r;
 }
 
@@ -313,17 +293,6 @@ inline std::vector<Estimate> estimateProfile(const VesselProfile& p) {
         const double q1 = 0.5 * RHO_AIR * v.lateralArea * v.cy, q2 = 0.5 * RHO_AIR * v.frontalArea * v.cx;
         if (q1 > 0 && c.Y > 0) e.push_back({"Предельный ветер, удержание лагом (80 % усилия)", fmt(std::sqrt(0.8 * c.Y / q1), 3) + " м/с", "только ветер и только силы (без момента, течения и волн); ориентир, а не расчёт класса DP"});
         if (q2 > 0 && c.X > 0) e.push_back({"Предельный ветер, удержание носом (80 % усилия)", fmt(std::sqrt(0.8 * c.X / q2), 3) + " м/с", "только ветер и только силы (без момента, течения и волн); ориентир"});
-    }
-    if (p.plant.enabled) {
-        double inst[2] = {0, 0}, need[2] = {0, 0}, all = 0;
-        for (auto& g : p.plant.gens) if (g.bus == 0 || g.bus == 1) inst[g.bus] += g.ratedKW;
-        for (auto& t : p.thrusters) { all += t.powerMaxKW; if (t.bus == 0 || t.bus == 1) need[t.bus] += t.powerMaxKW; }
-        e.push_back({"Установленная мощность: шина A / B", fmt(inst[0], 5) + " / " + fmt(inst[1], 5) + " кВт", "сумма номиналов генераторов"});
-        e.push_back({"Движители на полном упоре: шина A / B", fmt(need[0], 5) + " / " + fmt(need[1], 5) + " кВт", "по полю powerMaxKW; движители без шины делят нагрузку поровну"});
-        const double tot = inst[0] + inst[1] - p.plant.serviceKW[0] - p.plant.serviceKW[1];
-        if (tot > 0 && all > 0) e.push_back({"Мощность под движители / их полная потребность", fmt(tot, 5) + " / " + fmt(all, 5) + " кВт", tot >= all ? "хватает для полного упора всех" : "полный упор всех сразу невозможен — упор ограничивает электростанция"});
-        double worst = 1e18; for (int b = 0; b < 2; ++b) { double mx = 0; for (auto& g : p.plant.gens) if (g.bus == b) mx = std::max(mx, g.ratedKW); worst = std::min(worst, inst[b] - mx - p.plant.serviceKW[b]); }
-        e.push_back({"Мощность под движители при потере крупнейшего генератора на каждой шине (худшая)", fmt(std::max(0.0, worst), 5) + " кВт", "оценка по условию отказа одного генератора"});
     }
     return e;
 }

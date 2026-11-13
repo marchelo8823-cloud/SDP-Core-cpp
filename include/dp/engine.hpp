@@ -92,20 +92,21 @@ public:
             o.powerKW += thrusterPowerKW(th[i], std::fabs(pct) / 100.0);
         }
 
-        // --- расхождение команды и обратной связи движителя: больше 25 % (азимут: больше 30° при команде выше 10 %) в течение 30 с
+        // --- расхождение команды и обратной связи движителя: больше порога fbDiffPct (азимут: угол больше fbDiffAngleDeg при команде выше 10 %) дольше fbDiffDelayS (по умолчанию 25 %, 30°, 30 с)
         if (!(ctl_.mode() == DpMode::Standby)) {
+            auto g = [](double v) { char b[24]; std::snprintf(b, sizeof b, "%g", v); return std::string(b); };
             for (size_t i = 0; i < th.size() && i < last_.size(); ++i) {
                 if (!th[i].enabled) continue;
                 const ThrusterFb* f = nullptr; for (const auto& x : fr.fb) if (x.id == th[i].id && x.valid) f = &x;
                 bool bad = false;
                 if (f) {
-                    bad = std::fabs(f->pct - last_[i].pct) > 25.0;
+                    bad = std::fabs(f->pct - last_[i].pct) > th[i].fbDiffPct;
                     if (!bad && th[i].type == ThrusterType::Azimuth && std::fabs(last_[i].pct) > 10.0)
-                        bad = std::fabs(rad2deg(wrapPi(deg2rad(f->angleDeg - last_[i].angleDeg)))) > 30.0;
+                        bad = std::fabs(rad2deg(wrapPi(deg2rad(f->angleDeg - last_[i].angleDeg)))) > th[i].fbDiffAngleDeg;
                 }
                 if (mmT_.size() <= i) mmT_.resize(th.size(), 0.0);
                 mmT_[i] = bad ? mmT_[i] + dt : 0.0;
-                if (mmT_[i] >= 30.0) o.alarms.push_back({"THR_FB_MISMATCH_" + th[i].id, "Движитель " + th[i].id + ": обратная связь расходится с командой (упор больше 25 % или угол больше 30°) более 30 с", false});
+                if (mmT_[i] >= th[i].fbDiffDelayS) o.alarms.push_back({"THR_FB_MISMATCH_" + th[i].id, "Движитель " + th[i].id + ": обратная связь расходится с командой (упор больше " + g(th[i].fbDiffPct) + " % или угол больше " + g(th[i].fbDiffAngleDeg) + "°) более " + g(th[i].fbDiffDelayS) + " с", false});
             }
         } else mmT_.assign(mmT_.size(), 0.0);
 

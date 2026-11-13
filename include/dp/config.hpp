@@ -6,7 +6,6 @@
 #include "dp/hub.hpp"
 #include "dp/json.hpp"
 #include "dp/output.hpp"
-#include "dp/rights.hpp"
 #include "dp/sim.hpp"
 #include "dp/vesselio.hpp"
 
@@ -19,21 +18,6 @@ struct InputCfg {
     int port = 0, baud = 4800;
 };
 
-// Связь с работающей системой ДП другого изготовителя (Praxis, Kongsberg…): по умолчанию только приём и сравнение, команды не отправляются.
-struct ExtField { std::string name, prefix; int index = 0; double scale = 1.0;
-                  std::string group = "other", unit, ch, cmp; };   // group: feedback (обратная связь движителей) | command (команды на движители) | power (энергосистема) | alarm (тревоги и состояния) | other; ch — только из этого входа (пусто — из любого); cmp — наша величина для сверки: <движитель>.cmdPct|cmdAngle|pct|angle|powerKW   // поле собственной посылки: строка начинается с prefix, index — номер поля через запятую (0 — сам заголовок)
-struct ExtLimit { std::string var; double lo = -1e18, hi = 1e18; };
-struct ExtTemplate { std::string name, text; double minIntervalS = 0.5; std::vector<ExtLimit> limits; };   // limits — допустимые значения подстановок {var}; minIntervalS — не чаще одной отправки за это время                                      // шаблон исходящей строки; подстановки {n} {e} {psi} (уставка), {x}, {y}, {v}
-struct ExtLinkCfg {
-    bool enabled = false;
-    std::string vendor = "generic";          // praxis | kongsberg | generic — пометка для оператора; разбор задают inputs и fields
-    std::vector<InputCfg> inputs;            // входы NMEA от чужой системы (положение, курс), как inputs
-    std::vector<ExtField> fields;            // дополнительные поля из собственных посылок (уставка, режим, нагрузки…)
-    std::string txTransport = "udp", txHost = "127.0.0.1"; int txPort = 0;   // куда уходят команды в активном режиме
-    std::vector<ExtTemplate> templates;
-    double posAlarmM = 10.0, hdgAlarmDeg = 3.0, lostS = 10.0;   // пороги расхождения и потери данных
-};
-
 struct AppCfg {
     VesselCfg vessel;
     std::vector<ThrusterCfg> thrusters;
@@ -44,7 +28,6 @@ struct AppCfg {
     double simSpeed = 1.0;
     EnvCfg env;
     SimSensorsCfg simSensors;
-    PlantCfg plant;                    // электростанция (необязательна)
     unsigned seed = 11;
     double initialHeadingDeg = 0;
     // входы и выходы
@@ -52,16 +35,12 @@ struct AppCfg {
     std::vector<LinkCfg> links;
     bool originSet = false; double originLat = 0, originLon = 0;
     struct PivotPreset { std::string name; double x = 0, y = 0; };
-    struct Limits { bool on = false; double move = 0, setdist = 0, hdg = 0; std::vector<std::string> forbid; } limits;   // ограничения оператора (начальные; меняются командой limits)
-    ExtLinkCfg extlink;
     std::vector<PivotPreset> pivotPresets;   // именованные точки вращения (кран, рубка…), в связанных осях: вдоль (+ нос), поперёк (+ правый борт)
-    std::vector<std::pair<std::string, std::string>> postRights;   // права постов: имя поста → список прав (control, ack, setup или view); не перечисленные посты имеют все права
     // программа
     double cycleHz = 10;
     double statusPeriodS = 5;
     std::string logFile;
     std::string startMode = "standby";
-    int dpClass = 0;                 // класс ДП для анализа последствий отказа: 0 — выключен, 2 или 3 (как в K-Pos)
     TrackCfg track;
     Setpoint startSetpoint; bool startSetpointGiven = false;
 };
@@ -110,53 +89,10 @@ inline void readInput(json::Obj& o, std::vector<InputCfg>& dst) {
         dst.push_back(in);
     }
 
-inline void readExtLink(json::Obj& o, ExtLinkCfg& xo) {
-    ExtLinkCfg& x = xo; x = ExtLinkCfg(); x.enabled = o.boolean("enabled", true);
-        x.vendor = o.str("vendor", "generic"); x.posAlarmM = o.num("posAlarmM", 10); x.hdgAlarmDeg = o.num("hdgAlarmDeg", 3); x.lostS = o.num("lostS", 10);
-        for (auto i : o.objs("inputs")) readInput(i, x.inputs);
-        for (auto f : o.objs("fields")) { ExtField ef; ef.name = f.str("name", ""); ef.prefix = f.str("prefix", ""); ef.index = f.integer("index", 1); ef.scale = f.num("scale", 1.0);
-            ef.group = f.str("group", "other"); ef.unit = f.str("unit", ""); ef.ch = f.str("ch", ""); ef.cmp = f.str("cmp", "");
-            if (ef.group != "feedback" && ef.group != "command" && ef.group != "power" && ef.group != "alarm" && ef.group != "other") f.error("группа сигнала «" + ef.group + "» неизвестна (feedback, command, power, alarm, other)");
-            if (ef.name.empty() || ef.prefix.empty()) f.error("поле extlink.fields: нужны name и prefix");
-            f.finish(); x.fields.push_back(ef); }
-        for (auto tpl : o.objs("templates")) { ExtTemplate et; et.name = tpl.str("name", ""); et.text = tpl.str("text", ""); et.minIntervalS = tpl.num("minIntervalS", 0.5); for (auto l : tpl.objs("limits")) { ExtLimit el; el.var = l.str("name", ""); el.lo = l.num("min", -1e18); el.hi = l.num("max", 1e18); if (el.var.empty()) l.error("предел: нужен name"); l.finish(); et.limits.push_back(el); } if (et.name.empty() || et.text.empty()) tpl.error("шаблон: нужны name и text"); tpl.finish(); x.templates.push_back(et); }
-        { auto t = o.obj("tx"); x.txTransport = t.str("type", "udp"); x.txHost = t.str("host", "127.0.0.1"); x.txPort = t.integer("port", 0); if (x.txTransport != "udp" && x.txTransport != "tcp") t.error("tx: udp или tcp"); t.finish(); }
-        o.finish();
-}
-
-// Настройки связи с внешней ДП из текста JSON (команда «ext setup», файл extlink.json в папке данных).
-inline bool parseExtLink(const std::string& text, ExtLinkCfg& out, std::string& err) {
+// Разбор настроек из текста JSON (в него же переводится книга Excel с данными судна).
+inline bool loadConfigText(const std::string& text, AppCfg& cfg, json::Report& rep) {
     json::Value root; std::string perr;
-    if (!json::parse(text, root, perr)) { err = "ошибка в тексте настроек связи, " + perr; return false; }
-    json::Report rep; json::Obj o(&root, "extlink", &rep);
-    ExtLinkCfg c; readExtLink(o, c);
-    if (!rep.errors.empty()) { err = rep.errors.front(); return false; }
-    for (auto& in : c.inputs) for (auto& in2 : c.inputs) if (&in != &in2 && in.ch.id == in2.ch.id) { err = "повторяется id входа «" + in.ch.id + "»"; return false; }
-    if (c.posAlarmM <= 0 || c.hdgAlarmDeg <= 0 || c.lostS <= 0) { err = "пороги расхождения и потери данных должны быть больше нуля"; return false; }
-    out = c; return true;
-}
-inline std::string extLinkToJson(const ExtLinkCfg& c) {
-    auto q = [](const std::string& x) { std::string r = "\""; for (char ch : x) { if (ch == '"' || ch == '\\') r += '\\'; r += ch; } return r + "\""; };
-    auto n = [](double v) { char b[40]; std::snprintf(b, sizeof b, "%.6g", v); return std::string(b); };
-    std::string j = "{\"enabled\":" + std::string(c.enabled ? "true" : "false") + ",\"vendor\":" + q(c.vendor) + ",\"posAlarmM\":" + n(c.posAlarmM) + ",\"hdgAlarmDeg\":" + n(c.hdgAlarmDeg) + ",\"lostS\":" + n(c.lostS) + ",\"inputs\":[";
-    for (size_t i = 0; i < c.inputs.size(); ++i) {
-        const InputCfg& in = c.inputs[i]; const char* k = in.ch.kind == ChannelKind::Gyro ? "gyro" : in.ch.kind == ChannelKind::LaserRadar ? "laser" : "gnss";
-        j += std::string(i ? "," : "") + "{\"id\":" + q(in.ch.id) + ",\"kind\":\"" + k + "\",\"sigma\":" + n(in.ch.sigma) + ",\"transport\":{\"type\":" + q(in.transport) + ",\"port\":" + std::to_string(in.port)
-            + ",\"host\":" + q(in.host) + ",\"bind\":" + q(in.bind) + ",\"device\":" + q(in.device) + ",\"baud\":" + std::to_string(in.baud) + "}}";
-    }
-    j += "],\"fields\":[";
-    for (size_t i = 0; i < c.fields.size(); ++i) j += std::string(i ? "," : "") + "{\"name\":" + q(c.fields[i].name) + ",\"prefix\":" + q(c.fields[i].prefix) + ",\"index\":" + std::to_string(c.fields[i].index) + ",\"scale\":" + n(c.fields[i].scale) + ",\"group\":" + q(c.fields[i].group) + ",\"unit\":" + q(c.fields[i].unit) + ",\"ch\":" + q(c.fields[i].ch) + ",\"cmp\":" + q(c.fields[i].cmp) + "}";
-    j += "],\"templates\":[";
-    for (size_t i = 0; i < c.templates.size(); ++i) j += std::string(i ? "," : "") + "{\"name\":" + q(c.templates[i].name) + ",\"text\":" + q(c.templates[i].text) + ",\"minIntervalS\":" + n(c.templates[i].minIntervalS) + ",\"limits\":[" + [&] { std::string r; for (size_t k = 0; k < c.templates[i].limits.size(); ++k) r += std::string(k ? "," : "") + "{\"name\":" + q(c.templates[i].limits[k].var) + ",\"min\":" + n(c.templates[i].limits[k].lo) + ",\"max\":" + n(c.templates[i].limits[k].hi) + "}"; return r; }() + "]}";
-    return j + "],\"tx\":{\"type\":" + q(c.txTransport) + ",\"host\":" + q(c.txHost) + ",\"port\":" + std::to_string(c.txPort) + "}}";
-}
-
-inline bool loadConfig(const std::string& path, AppCfg& cfg, json::Report& rep) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) { rep.errors.push_back("не удалось открыть файл настроек: " + path); return false; }
-    std::stringstream ss; ss << f.rdbuf();
-    json::Value root; std::string perr;
-    if (!json::parse(ss.str(), root, perr)) { rep.errors.push_back("ошибка в файле настроек, " + perr); return false; }
+    if (!json::parse(text, root, perr)) { rep.errors.push_back("ошибка в настройках, " + perr); return false; }
     json::Obj R(&root, "настройки", &rep);
 
     // --- судно
@@ -170,24 +106,7 @@ inline bool loadConfig(const std::string& path, AppCfg& cfg, json::Report& rep) 
         }
         if (cfg.thrusters.empty()) rep.errors.push_back("не описан ни один движитель (thrusters)");
     }
-    // --- электростанция (необязательна)
-    { const json::Value* pv = root.find("plant");
-      if (pv) {
-        auto o = R.obj("plant"); PlantCfg& pc = cfg.plant; pc.enabled = true;
-        pc.tieClosed = o.boolean("tieClosed", true); pc.tieOpenInDp = o.boolean("tieOpenInDp", true); pc.minReservePct = o.num("minReservePct", 15.0);
-        pc.serviceKW[0] = o.num("serviceKW_A", 0); pc.serviceKW[1] = o.num("serviceKW_B", 0);
-        for (auto g : o.objs("generators")) {
-            GeneratorCfg gc; gc.id = g.str("id", ""); gc.ratedKW = g.num("ratedKW", 0); gc.online = g.boolean("online", true);
-            const std::string bs = g.str("bus", "A");
-            if (bs == "A") gc.bus = 0; else if (bs == "B") gc.bus = 1; else g.error("шина генератора — «A» или «B»");
-            if (gc.id.empty()) g.error("не задан id генератора");
-            if (!(gc.ratedKW > 0 && gc.ratedKW <= 1e5)) g.error("ratedKW генератора должен быть от 0 до 100 000 кВт");
-            g.finish(); pc.gens.push_back(gc);
-        }
-        if (pc.gens.empty()) o.error("в plant не описан ни один генератор (generators)");
-        if (!(pc.minReservePct >= 0 && pc.minReservePct <= 100)) o.error("minReservePct должен быть от 0 до 100");
-        o.finish();
-      } }
+
     // --- регуляторы
     { auto o = R.obj("control"); ControlCfg& c = cfg.control;
       const std::string law = o.str("law", "pid");
@@ -247,32 +166,26 @@ inline bool loadConfig(const std::string& path, AppCfg& cfg, json::Report& rep) 
       auto s = o.obj("sensors");
       cfg.simSensors.laser = s.boolean("laser", true); cfg.simSensors.wire = s.boolean("wire", true);
       cfg.simSensors.mrus = s.integer("mrus", 3); cfg.simSensors.gyros = s.integer("gyros", 3); cfg.simSensors.anemometers = s.integer("anemometers", 3);
+      if (s.has("gnss")) {       // приёмники спутниковой системы имитатора: обозначение, место установки, СКО
+          cfg.simSensors.gnss.clear();
+          for (auto g : s.objs("gnss")) {
+              SimSensorsCfg::Gnss x; x.id = g.str("id", ""); x.sigma = g.num("sigma", 0.5);
+              auto off = g.nums("offset"); if (off.size() == 3) x.offset = V3{off[0], off[1], off[2]}; else if (!off.empty()) g.error("offset задаётся тремя числами [x, y, z]");
+              if (x.id.empty()) { g.error("не задан id приёмника"); }
+              g.finish(); cfg.simSensors.gnss.push_back(x);
+          }
+      }
       s.finish();
       o.finish();
       if (cfg.simSpeed <= 0) rep.errors.push_back("sim.speed должен быть больше нуля");
     }
     // --- входы
     for (auto o : R.objs("inputs")) readInput(o, cfg.inputs);
-    if (root.find("extlink")) { auto o = R.obj("extlink"); readExtLink(o, cfg.extlink); }
-    if (root.find("limits")) {
-        auto o = R.obj("limits"); cfg.limits.on = o.boolean("on", true);
-        cfg.limits.move = std::max(0.0, o.num("maxMoveM", 0)); cfg.limits.setdist = std::max(0.0, o.num("maxSetDistM", 0)); cfg.limits.hdg = std::max(0.0, o.num("maxHdgStepDeg", 0));
-        { const std::string fm = o.str("forbidModes", ""); std::string t;
-          for (size_t i = 0; i <= fm.size(); ++i) { if (i == fm.size() || fm[i] == ',' || fm[i] == ' ') { if (!t.empty()) cfg.limits.forbid.push_back(t); t.clear(); } else t += fm[i]; } }
-        o.finish();
-    }
     for (auto o : R.objs("pivotPresets")) {
         AppCfg::PivotPreset pp; pp.name = o.str("name", ""); pp.x = o.num("x", 0); pp.y = o.num("y", 0);
         if (pp.name.empty()) o.error("в pivotPresets не задано имя name");
         if (std::fabs(pp.x) > 300 || std::fabs(pp.y) > 100) o.error("pivotPresets: |x| ≤ 300, |y| ≤ 100 м");
         o.finish(); cfg.pivotPresets.push_back(pp);
-    }
-    for (auto o : R.objs("posts")) {   // права операторских постов
-        const std::string st = o.str("station", ""), rt = o.str("rights", "control,ack,setup");
-        if (st.empty()) o.error("не задано имя поста station");
-        std::string why; if (!parsePostRights(rt, why)) o.error("rights: " + why);
-        o.finish();
-        cfg.postRights.push_back({st, rt});
     }
     { auto o = R.obj("origin");
       if (o.present()) { cfg.originSet = true; cfg.originLat = o.num("lat", 0); cfg.originLon = o.num("lon", 0); o.finish(); } }
@@ -322,7 +235,6 @@ inline bool loadConfig(const std::string& path, AppCfg& cfg, json::Report& rep) 
     { auto o = R.obj("app");
       cfg.cycleHz = o.num("cycleHz", 10); cfg.statusPeriodS = o.num("statusPeriodS", 5); cfg.logFile = o.str("logFile", "");
       cfg.startMode = o.str("startMode", "standby");
-      cfg.dpClass = static_cast<int>(o.num("dpClass", 0)); if (cfg.dpClass != 0 && cfg.dpClass != 2 && cfg.dpClass != 3) o.error("dpClass: 0, 2 или 3");
       bool ok; parseMode(cfg.startMode, ok); if (!ok) o.error("режим запуска «" + cfg.startMode + "» неизвестен");
       auto sp = o.nums("setpoint"); if (sp.size() == 3) { cfg.startSetpoint = {sp[0], sp[1], sp[2]}; cfg.startSetpointGiven = true; } else if (!sp.empty()) o.error("setpoint — три числа [север, восток, курс]");
       if (o.has("track")) {
@@ -336,6 +248,13 @@ inline bool loadConfig(const std::string& path, AppCfg& cfg, json::Report& rep) 
     }
     R.finish();
     return rep.errors.empty();
+}
+
+inline bool loadConfig(const std::string& path, AppCfg& cfg, json::Report& rep) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) { rep.errors.push_back("не удалось открыть файл настроек: " + path); return false; }
+    std::stringstream ss; ss << f.rdbuf();
+    return loadConfigText(ss.str(), cfg, rep);
 }
 
 }  // namespace dp
