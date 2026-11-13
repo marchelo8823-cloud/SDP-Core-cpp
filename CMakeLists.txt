@@ -49,6 +49,11 @@ dp_test(core_test ${D}/Данные_судна_пример.xlsx ${D}/Данны
 dp_test(capability_test ${D}/Данные_судна_пример.xlsx)
 dp_test(shipbook_test ${D}/Данные_судна_шаблон.xlsx ${D}/Данные_судна_пример.xlsx ${CMAKE_CURRENT_SOURCE_DIR}/tests/books ${D}/Данные_имитатора_шаблон.xlsx ${D}/Данные_имитатора_пример.xlsx)
 
+# отчёт по записям (tools/sdp_report.py), если есть Python 3
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME report_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/report_test.py $<TARGET_FILE:sdp_run> ${CMAKE_CURRENT_SOURCE_DIR})
+endif()
 # сценарии рабочей программы с критериями «#! ...» в самих файлах
 file(GLOB DP_SCENARIOS ${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/*.txt)
 foreach(s ${DP_SCENARIOS})

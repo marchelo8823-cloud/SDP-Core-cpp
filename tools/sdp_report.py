@@ -28,18 +28,33 @@ def f(v, nd=2):
     return "—" if v is None or (isinstance(v, float) and math.isnan(v)) else f"{v:.{nd}f}".replace(".", ",")
 
 
+class ReportError(Exception):
+    pass
+
+
 # ------------------------------------------------------------------ журнал ядра
 def core_log(path, lim_m, lim_deg):
-    rows = []
-    with open(path, encoding="utf-8", newline="") as fh:
-        for r in csv.DictReader(fh):
+    need = ["t_s", "состояние", "режим", "ошибка_м", "ошибка_курса_град", "загрузка", "ветер_мс"]
+    rows = []; skipped = 0
+    with open(path, encoding="utf-8", errors="replace", newline="") as fh:
+        rd = csv.DictReader(fh)
+        miss = [k for k in need if k not in (rd.fieldnames or [])]
+        if miss:
+            raise ReportError("в журнале нет столбцов: " + ", ".join(miss) + ". Нужен журнал ядра 1.3 (sdp_run --log).")
+        for r in rd:
             try:
+                float(r["t_s"])
                 rows.append(r)
-            except Exception:
-                pass
+            except (TypeError, ValueError):
+                skipped += 1
     if not rows:
         return "# Отчёт по журналу ядра\n\n⚠ В журнале нет строк.\n"
-    num = lambda r, k: float(r[k]) if r.get(k) not in (None, "") else float("nan")
+
+    def num(r, k):
+        try:
+            return float(r[k])
+        except (TypeError, ValueError, KeyError):
+            return float("nan")
     t = [num(r, "t_s") for r in rows]
     dt = [t[i + 1] - t[i] for i in range(len(t) - 1)]
     step = pct(dt, 50) if dt else 0.1
@@ -48,6 +63,7 @@ def core_log(path, lim_m, lim_deg):
             f"| Длительность | {f(t[-1] - t[0], 0)} с |", f"| Строк | {len(rows)} |", f"| Шаг записи | {f(step, 2)} с |"]
     gaps = [(t[i], d) for i, d in enumerate(dt) if d > 5 * step]
     out.append(f"| Пропуски записи (больше 5 шагов) | {len(gaps)} |")
+    out.append(f"| Испорченных строк (пропущены) | {skipped} |")
     out.append("")
 
     # состояния и режимы
@@ -55,12 +71,10 @@ def core_log(path, lim_m, lim_deg):
     for r in rows:
         st[r["состояние"]] += step
         md[r["режим"]] += step
-    out += ["## Время по состояниям и режимам", "", "| Состояние ядра | с | Режим | с |", "|---|---|---|---|"]
-    a, b = list(st.items()), list(md.items())
-    for i in range(max(len(a), len(b))):
-        x = a[i] if i < len(a) else ("", None)
-        y = b[i] if i < len(b) else ("", None)
-        out.append(f"| {x[0]} | {f(x[1], 0) if x[1] is not None else ''} | {y[0]} | {f(y[1], 0) if y[1] is not None else ''} |")
+    out += ["## Время по состояниям ядра", "", "| Состояние | с |", "|---|---|"]
+    out += [f"| {k} | {f(v, 0)} |" for k, v in st.items()]
+    out += ["", "## Время по режимам", "", "| Режим | с |", "|---|---|"]
+    out += [f"| {k} | {f(v, 0)} |" for k, v in md.items()]
     out.append("")
 
     # удержание
@@ -69,15 +83,17 @@ def core_log(path, lim_m, lim_deg):
     if not hold:
         out += ["Режима удержания в журнале нет.", ""]
     else:
-        ep = [num(r, "ошибка_м") for r in hold]
-        eh = [abs(num(r, "ошибка_курса_град")) for r in hold]
-        ld = [num(r, "загрузка") for r in hold]
-        wd = [num(r, "ветер_мс") for r in hold]
+        ok = lambda v: [x for x in v if not math.isnan(x)]
+        ep = ok([num(r, "ошибка_м") for r in hold])
+        eh = ok([abs(num(r, "ошибка_курса_град")) for r in hold])
+        ld = ok([num(r, "загрузка") for r in hold])
+        wd = ok([num(r, "ветер_мс") for r in hold])
+        mx = lambda v: max(v) if v else float("nan")
         out += ["| Величина | Среднеквадр. | 95 % | Наибольшее |", "|---|---|---|---|",
-                f"| Ошибка положения, м | {f(rms(ep))} | {f(pct(ep, 95))} | {f(max(ep))} |",
-                f"| Ошибка курса, ° | {f(rms(eh))} | {f(pct(eh, 95))} | {f(max(eh))} |",
-                f"| Загрузка движителей, доля | {f(rms(ld))} | {f(pct(ld, 95))} | {f(max(ld))} |",
-                f"| Ветер, м/с | {f(rms(wd), 1)} | {f(pct(wd, 95), 1)} | {f(max(wd), 1)} |", ""]
+                f"| Ошибка положения, м | {f(rms(ep))} | {f(pct(ep, 95))} | {f(mx(ep))} |",
+                f"| Ошибка курса, ° | {f(rms(eh))} | {f(pct(eh, 95))} | {f(mx(eh))} |",
+                f"| Загрузка движителей, доля | {f(rms(ld))} | {f(pct(ld, 95))} | {f(mx(ld))} |",
+                f"| Ветер, м/с | {f(rms(wd), 1)} | {f(pct(wd, 95), 1)} | {f(mx(wd), 1)} |", ""]
         # эпизоды выхода за пороги
         eps = []
         cur = None
@@ -167,9 +183,15 @@ def main():
     ap.add_argument("--порог-град", dest="lim_deg", type=float, default=3.0)
     ap.add_argument("-o", dest="out")
     a = ap.parse_args()
-    with open(a.file, encoding="utf-8", errors="replace") as fh:
-        head = fh.readline()
-    text = core_log(a.file, a.lim_m, a.lim_deg) if head.startswith("t_s,") else nmea_log(a.file)
+    try:
+        with open(a.file, encoding="utf-8", errors="replace") as fh:
+            head = fh.readline()
+        h = head.lstrip("\ufeff").strip()
+        is_csv = "," in h and not NMEA_RE.search(h) and "$" not in h and "!" not in h
+        text = core_log(a.file, a.lim_m, a.lim_deg) if is_csv else nmea_log(a.file)
+    except (OSError, ReportError) as e:
+        sys.stderr.write(f"Ошибка: {e}\n")
+        sys.exit(2)
     if a.out:
         with open(a.out, "w", encoding="utf-8") as fh:
             fh.write(text)

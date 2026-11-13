@@ -37,7 +37,12 @@ jobs:
           persist-credentials: false
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake g++
       - name: Сборка ядра
-        run: cmake -S . -B build && cmake --build build -j"$(nproc)" --target sdp_run && mkdir -p вход
+        run: cmake -S . -B build && cmake --build build -j"$(nproc)" --target sdp_run
+      - name: Вложения задачи → вход/ (до запуска агента; агенту сеть не нужна)
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/fetch_attachments.py
       - run: git config user.name "СДП агент 1" && git config user.email "agent1@users.noreply.github.com"
       - uses: anthropics/claude-code-action@v1
         env:
@@ -49,11 +54,11 @@ jobs:
             Ты — агент 1 проекта СДП: данные. Режим: задача.
             Репозиторий: ${{ github.repository }}. Задача (issue) №${{ github.event.issue.number }}, автор — владелец.
             Прочитай и выполняй: _base/CLAUDE.md, _base/.github/agents/common.md, _base/.github/agents/01-данные.md.
-            Ветка: agent/data-${{ github.event.issue.number }}. Отчёт: отчёты/${{ github.event.issue.number }}/.
+            Вложения задачи уже скачаны в вход/ (список — вход/СПИСОК.txt). Ветка: agent/data-${{ github.event.issue.number }}. Отчёт: отчёты/${{ github.event.issue.number }}/.
           claude_args: |
             --model ${{ env.MODEL }}
             --max-turns 60
-            --allowedTools Read,Glob,Grep,Write(отчёты/**),Edit(отчёты/**),Bash(python3 tools/sdp_report.py:*),Bash(./build/sdp_run:*),Bash(curl -fsSL --max-filesize 50000000 -o вход/:*),Bash(ls:*),Bash(wc:*),Bash(head:*),Bash(file:*),Bash(git switch -c agent/data-:*),Bash(git add отчёты/:*),Bash(git commit:*),Bash(git push -u origin agent/data-:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr create:*)
+            --allowedTools Read,Glob,Grep,Write(отчёты/**),Edit(отчёты/**),Bash(python3 tools/sdp_report.py:*),Bash(./build/sdp_run:*),Bash(ls:*),Bash(wc:*),Bash(head:*),Bash(file:*),Bash(git switch -c agent/data-:*),Bash(git add отчёты/:*),Bash(git commit:*),Bash(git push -u origin agent/data-:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr create:*)
 
   rules:
     if: >-
@@ -134,7 +139,7 @@ jobs:
           claude_args: |
             --model ${{ env.MODEL }}
             --max-turns 60
-            --allowedTools Read,Glob,Grep,Write(отчёты/**),Edit,Bash(./build/sdp_run:*),Bash(cmake:*),Bash(ctest:*),Bash(git switch -c agent/display-:*),Bash(git add:*),Bash(git commit:*),Bash(git push -u origin agent/display-:*),Bash(git diff:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr create:*)
+            --allowedTools Read,Glob,Grep,Write(отчёты/**),Edit(отчёты/**),Edit(apps/sdp_run.cpp),Edit(include/dp/core.hpp),Edit(include/dp/engine.hpp),Edit(include/dp/alarms.hpp),Edit(shipedit/mainwindow.cpp),Bash(./build/sdp_run:*),Bash(cmake:*),Bash(ctest:*),Bash(git switch -c agent/display-:*),Bash(git add отчёты/:*),Bash(git add apps/sdp_run.cpp:*),Bash(git add include/dp/core.hpp:*),Bash(git add include/dp/engine.hpp:*),Bash(git add include/dp/alarms.hpp:*),Bash(git add shipedit/mainwindow.cpp:*),Bash(git commit:*),Bash(git push -u origin agent/display-:*),Bash(git diff:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr create:*)
       - uses: actions/upload-artifact@v6
         if: always()
         with:
