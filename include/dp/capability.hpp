@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 #include "dp/config.hpp"
-#include "dp/plant.hpp"
+#include "dp/thrust.hpp"
 
 namespace dp {
 
@@ -50,27 +50,6 @@ inline Wrench capEnvForce(const VesselCfg& v, const Inertia& in, double windMS, 
     return w;
 }
 
-// Доля упора по мощности электростанции при отказавших шинах (dead[0] — A, dead[1] — B). Без электростанции — 1.
-inline double capPowerScale(const std::vector<ThrusterCfg>& th, const PlantCfg& pc, const bool dead[2]) {
-    if (!pc.enabled) return 1.0;
-    double av[2] = {0, 0};
-    for (const auto& g : pc.gens) { const int b = g.bus < 1 ? 0 : 1; if (g.online && !dead[b]) av[b] += g.ratedKW; }
-    double nd[2] = {0, 0}, ndAll = 0;
-    for (const auto& t : th) {
-        if (!t.enabled) continue;
-        if (t.bus >= 0 && t.bus <= 1) { if (dead[t.bus]) continue; nd[t.bus] += t.powerMaxKW; }
-        else { nd[0] += 0.5 * t.powerMaxKW; nd[1] += 0.5 * t.powerMaxKW; }
-        ndAll += t.powerMaxKW;
-    }
-    if (ndAll <= 0) return 1.0;
-    const double s0 = dead[0] ? 0 : pc.serviceKW[0], s1 = dead[1] ? 0 : pc.serviceKW[1];
-    double ps;
-    const bool tie = pc.tieClosed && !pc.tieOpenInDp;     // в режимах ДП секционный выключатель размыкается, если так задано
-    if (tie) ps = std::max(0.0, av[0] + av[1] - s0 - s1) / std::max(1e-9, nd[0] + nd[1]);
-    else ps = std::min(nd[0] > 1e-9 ? std::max(0.0, av[0] - s0) / nd[0] : 1e9, nd[1] > 1e-9 ? std::max(0.0, av[1] - s1) / nd[1] : 1e9);
-    ps = clampd(ps, 0.0, 1.0);
-    return ps <= 0 ? 0.0 : thrustScaleForPower(th, std::max(ps, 0.2));
-}
 
 // Хватает ли комплексу усилий для удержания при заданном ветре: сравниваются набранные и нужные сила и момент.
 // Колонки считаются уже повёрнутыми на нужные углы (установившийся режим): распределение повторяется, пока углы не перестанут меняться.
@@ -118,22 +97,14 @@ inline CapCurve capCurve(const VesselCfg& v, const std::vector<ThrusterCfg>& th,
     return c;
 }
 
-// Все сценарии: «Все движители», затем отказ каждого движителя и (при описанной электростанции) отказ шины A и B.
+// Все сценарии: «Все движители», затем отказ каждого движителя .
 inline std::vector<CapCurve> capScenarios(const AppCfg& cfg, const CapEnv& e) {
     std::vector<ThrusterCfg> base; for (const auto& t : cfg.thrusters) if (t.maxForward > 0 && t.enabled) base.push_back(t);
     std::vector<CapCurve> out;
-    const bool none[2] = {false, false};
-    out.push_back(capCurve(cfg.vessel, base, capPowerScale(base, cfg.plant, none), e, "Все движители"));
+    out.push_back(capCurve(cfg.vessel, base, 1.0, e, "Все движители"));
     for (size_t i = 0; i < base.size(); ++i) {
         std::vector<ThrusterCfg> t2 = base; t2[i].enabled = false;
-        out.push_back(capCurve(cfg.vessel, t2, capPowerScale(t2, cfg.plant, none), e, "Отказ " + base[i].id));
-    }
-    if (cfg.plant.enabled) {
-        for (int b = 0; b < 2; ++b) {
-            std::vector<ThrusterCfg> t2 = base; bool dead[2] = {false, false}; dead[b] = true;
-            for (auto& t : t2) if (t.bus == b) t.enabled = false;
-            out.push_back(capCurve(cfg.vessel, t2, capPowerScale(t2, cfg.plant, dead), e, std::string("Отказ шины ") + (b ? "B" : "A")));
-        }
+        out.push_back(capCurve(cfg.vessel, t2, 1.0, e, "Отказ " + base[i].id));
     }
     return out;
 }
@@ -176,7 +147,7 @@ inline DriftResult capHypot(const AppCfg& cfg, const HypotCase& h) {
     }
     const bool deadAny = h.deadBus[0] || h.deadBus[1];
     if (deadAny) for (auto& t : th) if (t.bus >= 0 && t.bus <= 1 && h.deadBus[t.bus]) t.enabled = false;
-    double scale = capPowerScale(th, cfg.plant, h.deadBus) * clampd(h.thrustLimitPct, 0.0, 100.0) / 100.0;
+    double scale = 1.0 * clampd(h.thrustLimitPct, 0.0, 100.0) / 100.0;
     const Inertia in = completeInertia(cfg.vessel);
     const double hs = h.wavesWithWind ? std::min(0.0246 * h.windMS * h.windMS, 12.0) : 0.0;
     r.envForce = capEnvForce(cfg.vessel, in, h.windMS, hs, h.currentMS, h.windFromDeg);

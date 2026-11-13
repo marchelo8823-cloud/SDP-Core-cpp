@@ -92,20 +92,21 @@ public:
             o.powerKW += thrusterPowerKW(th[i], std::fabs(pct) / 100.0);
         }
 
-        // --- расхождение команды и обратной связи движителя: больше 25 % (азимут: больше 30° при команде выше 10 %) в течение 30 с
+        // --- расхождение команды и обратной связи движителя: больше порога fbDiffPct (азимут: угол больше fbDiffAngleDeg при команде выше 10 %) дольше fbDiffDelayS (по умолчанию 25 %, 30°, 30 с)
         if (!(ctl_.mode() == DpMode::Standby)) {
+            auto g = [](double v) { char b[24]; std::snprintf(b, sizeof b, "%g", v); return std::string(b); };
             for (size_t i = 0; i < th.size() && i < last_.size(); ++i) {
                 if (!th[i].enabled) continue;
                 const ThrusterFb* f = nullptr; for (const auto& x : fr.fb) if (x.id == th[i].id && x.valid) f = &x;
                 bool bad = false;
                 if (f) {
-                    bad = std::fabs(f->pct - last_[i].pct) > 25.0;
+                    bad = std::fabs(f->pct - last_[i].pct) > th[i].fbDiffPct;
                     if (!bad && th[i].type == ThrusterType::Azimuth && std::fabs(last_[i].pct) > 10.0)
-                        bad = std::fabs(rad2deg(wrapPi(deg2rad(f->angleDeg - last_[i].angleDeg)))) > 30.0;
+                        bad = std::fabs(rad2deg(wrapPi(deg2rad(f->angleDeg - last_[i].angleDeg)))) > th[i].fbDiffAngleDeg;
                 }
                 if (mmT_.size() <= i) mmT_.resize(th.size(), 0.0);
                 mmT_[i] = bad ? mmT_[i] + dt : 0.0;
-                if (mmT_[i] >= 30.0) o.alarms.push_back({"THR_FB_MISMATCH_" + th[i].id, "Движитель " + th[i].id + ": обратная связь расходится с командой (упор больше 25 % или угол больше 30°) более 30 с", false});
+                if (mmT_[i] >= th[i].fbDiffDelayS) o.alarms.push_back({"THR_FB_MISMATCH_" + th[i].id, "Движитель " + th[i].id + ": обратная связь расходится с командой (упор больше " + g(th[i].fbDiffPct) + " % или угол больше " + g(th[i].fbDiffAngleDeg) + "°) более " + g(th[i].fbDiffDelayS) + " с", false});
             }
         } else mmT_.assign(mmT_.size(), 0.0);
 
@@ -140,7 +141,6 @@ public:
         o.est = es;
 
         // --- возможности и управление
-        const ControlCfg& cc0 = ctl_.cfg();
         const double effScale = thrustScale;     // допустимая доля упора определяется электростанцией
         const Capability cap = alloc_.capability(effScale);
         o.cap = cap;
@@ -149,20 +149,42 @@ public:
         const bool needHdg = m != DpMode::Standby && m != DpMode::Manual;
         bool ok = true;
         if (needPos && !es.posValid) { ok = false; o.alarms.push_back({"POS_LOST", "Потеря положения — счисление по модели превысило допустимое время", true}); }
-        if (needHdg && !es.hdgValid) { ok = false; o.alarms.push_back({"HDG_LOST", "Потеря курса — нет достоверных данных дольше 2 с", true}); }
+        if (needHdg && !es.hdgValid) { ok = false; o.alarms.push_back({"HDG_LOST", "Потеря курса — нет данных гирокомпасов, счисление курса закончилось: упор снят", true}); }
+        if (needHdg && es.hdgDeadReckon) {
+            const int left = static_cast<int>(std::max(0.0, est_.cfg().hdgDeadReckonS - es.hdgLostS));
+            o.alarms.push_back({"HDG_DR", "Потеря курса — нет данных гирокомпасов " + std::to_string(static_cast<int>(es.hdgLostS)) + " с, курс по счислению (до снятия упора " + std::to_string(left) + " с)", true, 1});
+        }
         if (es.gnssDisagree) o.alarms.push_back({"POS_DISAGREE", "Расхождение источников положения", false});
         // потеря опорных систем (K-Pos, «Position dropout»): сначала «Все системы положения отклонены», через posDropoutS — «Потеря положения»;
-        // судно при этом удерживается по модели, а уставка переносится в текущую расчётную точку
+        // судно при этом удерживается по модели, уставка оператора не меняется. Когда измерения вернутся и судно окажется дальше
+        // returnStartM от уставки, оно возвращается в неё плавно, не быстрее returnSpeedMS (ctl_.beginReturn)
         if (needPos && es.posValid && es.refLost) {
             if (es.posDropout) {
-                o.alarms.push_back({"POS_DROPOUT", "Потеря положения — нет измерений " + std::to_string(static_cast<int>(es.refLostS)) + " с, удержание по модели (счисление)", true, 1});
-                if (!dropLatched_) {
-                    dropLatched_ = true;
-                    if (m == DpMode::AutoPosition) { Setpoint sp = ctl_.holdFromCrp(es.n, es.e, ctl_.setpoint().psiDeg); ctl_.setSetpoint(sp); o.infos.push_back("Потеря положения: уставка перенесена в текущую расчётную точку"); }
-                }
+                char u[32]; std::snprintf(u, sizeof u, "%.1f", es.posUncertM);
+                o.alarms.push_back({"POS_DROPOUT", "Потеря положения — нет измерений " + std::to_string(static_cast<int>(es.refLostS)) + " с, удержание по модели (счисление), погрешность положения ≈ " + u + " м", true, 1});
+                dropLatched_ = true;
             } else o.alarms.push_back({"POS_ALL_REJ", "Все системы положения отклонены или недоступны — удержание по модели", true, 1});
         }
-        if (!(es.refLost && es.posDropout)) dropLatched_ = false;
+        if (dropLatched_ && !es.refLost) {   // измерения положения вернулись после потери
+            dropLatched_ = false;
+            if (m == DpMode::AutoPosition) {
+                const Setpoint crp = ctl_.crpFromHold(ctl_.setpoint());
+                const double d = std::hypot(es.n - crp.n, es.e - crp.e);
+                const ControlCfg& cc = ctl_.cfg();
+                char b[200];
+                if (d > cc.returnStartM) {
+                    ctl_.beginReturn(es, cc.returnSpeedMS, 3.0);
+                    std::snprintf(b, sizeof b, "Положение восстановлено: судно в %.1f м от заданной точки, возврат со скоростью до %.1f м/с", d, cc.returnSpeedMS > 0 ? std::min(cc.returnSpeedMS, cc.refMaxSpeed) : cc.refMaxSpeed);
+                } else std::snprintf(b, sizeof b, "Положение восстановлено: судно в %.1f м от заданной точки", d);
+                o.infos.push_back(b);
+            } else o.infos.push_back("Положение восстановлено");
+        }
+        if (wasReturning_ && !ctl_.returning() && m == DpMode::AutoPosition) o.infos.push_back("Возврат в заданную точку завершён");
+        wasReturning_ = ctl_.returning();
+        if (m == DpMode::AutoPosition && ctl_.returning()) {
+            char b[160]; std::snprintf(b, sizeof b, "Возврат в заданную точку после потери положения: осталось %.1f м", ctl_.returnLeftM());
+            o.alarms.push_back({"POS_RETURN", b, false});
+        }
         for (const auto& pa : es.posAlerts) o.alarms.push_back({pa.first, pa.second, false});
         if (es.softCorrecting) o.alarms.push_back({"POS_SOFT", "Плавная коррекция положения — после скачка опорной системы", false});
         if (es.gyroDisagree) o.alarms.push_back({"GYRO_DISAGREE", "Расхождение гирокомпасов", false});
@@ -257,7 +279,7 @@ public:
     }
 
 private:
-    bool highLoad_ = false, dropLatched_ = false; double onT_ = 0, offT_ = 0;
+    bool highLoad_ = false, dropLatched_ = false, wasReturning_ = false; double onT_ = 0, offT_ = 0;
     Forecaster fc_; Capability lastCap_; bool lastSat_ = false;
     double hdgLim_ = 0; bool hWarn_ = false, hOut_ = false; double hWarnOn_ = 0, hWarnOff_ = 0, hOutOn_ = 0, hOutOff_ = 0;
     std::vector<double> mmT_;

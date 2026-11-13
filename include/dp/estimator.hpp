@@ -76,6 +76,7 @@ struct EstimatorCfg {
     double posDropoutS = 20.0;        // «Position dropout» (K-Pos): столько секунд без принятых измерений положения
     double deadReckonMaxS = 0.0;      // 0 — счисление без ограничения по времени (как в K-Pos); иначе после этого времени положение считается потерянным ⚠
     double hdgTimeoutS = 2.0;
+    double hdgDeadReckonS = 30.0;     // потеря курса: столько секунд курс держится по счислению (модель судна), затем курс считается потерянным
     double windTimeoutS = 6.0;
     double gateSigma = 5.0;          // порог отбраковки по невязке
     int resetAfterRejects = 6;       // после стольких подряд отбракованных измерений принимаем скачок
@@ -139,6 +140,10 @@ struct EstimatorState {
     // потеря опорных систем (как K-Pos): refLost — все системы положения отклонены или недоступны (положение держится по модели, «счисление»),
     // posDropout — так длится дольше posDropoutS (20 с). refLostS — сколько секунд положение не уточнялось измерениями.
     bool refLost = false, posDropout = false; double refLostS = 0;
+    double posUncertM = 0;            // погрешность положения по фильтру (1 СКО, м): растёт при счислении
+    // курс: hdgMeasured — есть достоверные данные гирокомпасов; hdgDeadReckon — их нет, курс держится по счислению (не дольше hdgDeadReckonS);
+    // hdgValid — курс пригоден для управления (измерен или по счислению); hdgLostS — сколько секунд нет данных гирокомпасов
+    bool hdgMeasured = false, hdgDeadReckon = false; double hdgLostS = 0;
     double posSigma = 0;
     std::vector<SensorStatus> sensors;
 };
@@ -167,7 +172,10 @@ public:
         updatePosition(time, fr, psi);
         // курс: предсказание
         const double Nmom = thrustBody.N + windBody.N;
-        if (kpsi_.inited) {
+        if (kpsi_.inited && s_.hdgDeadReckon) {
+            kpsi_.v = 0;   // счисление курса: ⚠ прогноз по модели моментов неустойчив (см. разбор), курс держится последним измеренным
+            kpsi_.P(0, 0) += deg2rad(0.05) * deg2rad(0.05) * dt;
+        } else if (kpsi_.inited) {
             const double a = (Nmom + kpsi_.b - in_.d66 * kpsi_.v) / in_.m66;
             kpsi_.p += kpsi_.v * dt + 0.5 * a * dt * dt;
             kpsi_.v += a * dt;
@@ -242,7 +250,7 @@ private:
         }
         bool anyFresh = false;
         for (const auto& m : fr.mru) anyFresh = anyFresh || m.fresh;
-        if (n > 0 && anyFresh && s_.hdgValid) waves_.push(time, psi, s_.roll, s_.pitch, -s_.heave);   // оценщик волн считает heave вверх
+        if (n > 0 && anyFresh && s_.hdgMeasured) waves_.push(time, psi, s_.roll, s_.pitch, -s_.heave);   // оценщик волн считает heave вверх
         if (mruLostS_ > 20.0) waves_.reset();                  // долго нет данных: накопленное окно уже не отражает море
         s_.wave = waves_.state();
         if (mruLostS_ > 20.0) { s_.wave.valid = false; s_.wave.dirValid = false; s_.wave.ffGain = 0; }
@@ -266,7 +274,15 @@ private:
             SensorStatus ss; ss.id = "H:" + h.id; ss.ageS = st.have ? fr.time - st.last : 1e9; ss.valid = st.have && ss.ageS <= ec_.hdgTimeoutS;
             s_.sensors.push_back(ss);
         }
-        s_.hdgValid = !vals.empty();
+        const bool wasMeasured = s_.hdgMeasured;
+        s_.hdgMeasured = !vals.empty();
+        if (s_.hdgMeasured) lastHdgOkT_ = fr.time;
+        // начало счисления курса: мгновенная скорость поворота по фильтру шумит (качка, волны), и прогноз от неё за десятки секунд
+        // уводит курс на градусы; берётся сглаженная скорость поворота за последние ~10 с
+        if (wasMeasured && !s_.hdgMeasured && kpsi_.inited) kpsi_.v = rSmooth_;
+        s_.hdgLostS = kpsi_.inited && !s_.hdgMeasured ? std::max(0.0, fr.time - lastHdgOkT_) : 0.0;
+        s_.hdgDeadReckon = kpsi_.inited && !s_.hdgMeasured && s_.hdgLostS <= ec_.hdgDeadReckonS;
+        s_.hdgValid = s_.hdgMeasured || s_.hdgDeadReckon;
         s_.gyroDisagree = false;
         if (vals.empty()) return;
         // медиана по окружности относительно первого значения
@@ -287,6 +303,8 @@ private:
             const double S = kpsi_.P(0, 0) + R;
             double K[3] = {kpsi_.P(0, 0) / S, kpsi_.P(1, 0) / S, kpsi_.P(2, 0) / S};
             kpsi_.p = wrapPi(kpsi_.p + K[0] * y); kpsi_.v += K[1] * y; kpsi_.b += K[2] * y;
+            const double dtH = clampd(fr.time - lastHdgFuseT_, 0.01, 1.0); lastHdgFuseT_ = fr.time;
+            rSmooth_ += (kpsi_.v - rSmooth_) * std::min(1.0, dtH / 10.0);
             Mx Pn = kpsi_.P;
             for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j) Pn(i, j) = kpsi_.P(i, j) - K[i] * kpsi_.P(0, j);
             kpsi_.P = Pn;
@@ -424,8 +442,6 @@ private:
     // Проверки по предсказанию и по медиане, веса, мягкая коррекция. Порядок как в K-Pos: сначала предсказание, затем медиана.
     void fusePosition(double time, const std::vector<PosItem>& fresh, const std::vector<PosItem>& used0) {
         auto sigK = [&](int a) { return a == 0 ? ec_.acceptSigmaNarrow : a == 2 ? ec_.acceptSigmaWide : ec_.gateSigma; };
-        // предел приёмки по предсказанию в метрах для каждой системы (нужен и для медианной проверки)
-        auto limitM = [&](const std::string& id, double sigma) { return sigK(posCfg(id).accept) * 1.4142 * std::sqrt(kn_.P(0, 0) + sigma * sigma); };
         // медиана по системам, входящим в решение (нужны три и более)
         bool medOn = ec_.medianMode > 0 && used0.size() >= 3;
         double medN = 0, medE = 0, sigMed = 0;
@@ -508,6 +524,7 @@ private:
     void publish(double psi) {
         s_.psi = kpsi_.inited ? kpsi_.p : psi;
         s_.r = kpsi_.v; s_.biasMoment = kpsi_.b;
+        s_.posUncertM = kn_.inited ? std::sqrt(std::max(0.0, kn_.P(0, 0)) + std::max(0.0, ke_.P(0, 0))) : 0.0;
         s_.n = kn_.p; s_.e = ke_.p; s_.vn = kn_.v; s_.ve = ke_.v; s_.biasN = kn_.b; s_.biasE = ke_.b;
         const double cp = std::cos(s_.psi), sp = std::sin(s_.psi);
         s_.u = s_.vn * cp + s_.ve * sp; s_.v = -s_.vn * sp + s_.ve * cp;
@@ -528,7 +545,7 @@ private:
     std::map<std::string, WindSeen> windSeen_;
     std::map<std::string, MruSeen> mruSeen_;
     WaveEstimator waves_;
-    double mruLostS_ = 1e9, lastFuseT_ = -1e9, lastAccT_ = -1e9;
+    double mruLostS_ = 1e9, lastFuseT_ = -1e9, lastAccT_ = -1e9, lastHdgOkT_ = -1e9, lastHdgFuseT_ = -1e9, rSmooth_ = 0;
     double lastPsi_ = 0, fs_ = 0, fcx_ = 1, fcy_ = 0;
     bool windInit_ = false;
 };

@@ -238,7 +238,8 @@ public:
             const auto p = split(val); int id = 0;
             try { if (p.size() < 2) throw 1; size_t k = 0; id = std::stoi(p[0], &k); if (k != p[0].size() || id < 0 || id > 65535) throw 1;
                   if (up(p[1]) == "CLEAR") { c.targets.erase(id); return true; }
-                  if (p.size() != 3) throw 1; c.targets[id] = {std::stod(p[1]), std::stod(p[2])}; }
+                  if (p.size() != 3) throw 1;
+                  c.targets[id] = {std::stod(p[1]), std::stod(p[2])}; }
             catch (...) { why = "target: «номер север восток» (м) или «номер clear»"; return false; }
             return true;
         }

@@ -1,0 +1,6 @@
+build*/
+*.csv
+!tests/**/*.csv
+.DS_Store
+test-out/
+_base/
