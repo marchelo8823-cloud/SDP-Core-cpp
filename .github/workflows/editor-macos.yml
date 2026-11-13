@@ -1,9 +1,8 @@
-# Сборка и тесты на macOS (Apple Silicon) и сборка редактора («Связка ключей»). Запускается при изменении ядра, тестов, редактора или вручную.
+# Сборка и тесты на macOS (Apple Silicon) и сборка редактора («Связка ключей»). Только вручную: Actions → macOS → Run workflow.
+# ⚠ Минута macOS расходует 10 минут бесплатного лимита (закрытый репозиторий, тариф Free — 2000 минут в месяц); прогон ≈ 15 минут.
 # ⚠ В закрытом репозитории минуты macOS расходуются из лимита GitHub в 10 раз быстрее минут Linux.
 name: macOS
 on:
-  pull_request:
-    paths: ["shipedit/**", "include/**", "apps/**", "tests/**", "CMakeLists.txt", ".github/workflows/editor-macos.yml"]
   workflow_dispatch:
 permissions:
   contents: read
