@@ -28,6 +28,11 @@ jobs:
           gh label create "агент:проверка"      --color F9A825 --description "Проверить изменение агентами 3 и 2" --force
           gh label create "ошибка"              --color C62828 --description "Найдена ошибка" --force
           gh label create "безопасность"        --color B71C1C --description "Подозрение на попытку обойти правила агентов" --force
+          gh label create "агент:данные"        --color 00695C --description "Агент 1: расшифровка записей и выгрузок СДП" --force
+          gh label create "агент:правила"       --color 4E342E --description "Агент 4: соответствие РС, ИМО, IMCA" --force
+          gh label create "агент:отображение"   --color 0277BD --description "Агент 5: что и как видит оператор" --force
+          gh label create "агент:операторы"     --color AD1457 --description "Агент 7: оценка удобства четырьмя операторами" --force
+          gh label create "соответствие"        --color 6D4C41 --description "Нарушение или новое требование правил" --force
 
   coordinator:
     if: github.event_name == 'issues' && github.actor == github.repository_owner && github.event.label.name == 'агент:координатор'
