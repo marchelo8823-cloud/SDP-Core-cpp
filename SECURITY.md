@@ -13,15 +13,18 @@
 
 ## Что должен включить владелец (в настройках GitHub)
 1. **Закрыть репозиторий:** Settings → General → Danger Zone → Change repository visibility → Private.
-2. **Защитить основную ветку:** Settings → Branches (или Rules → Rulesets) → правило для `main`:
-   - Require a pull request before merging, Require approvals: 1, Require review from Code Owners;
-   - Require status checks to pass: «Сборка и тесты / build»;
-   - Block force pushes; Restrict deletions.
+2. **Защитить основную ветку:** Settings → Rules → Rulesets → New branch ruleset, цель — Include default branch:
+   - Restrict deletions; Block force pushes;
+   - Require a pull request before merging, **Required approvals: 0** (свои изменения в GitHub одобрить нельзя: при 1 владелец заблокирует сам себя);
+   - Require status checks to pass: `build` из «Сборка и тесты».
+   - ⚠ В закрытом репозитории на тарифе Free правила веток не действуют (GitHub: «Upgrade to GitHub Pro or make this repository public»). Без Pro основную ветку защищает только то, что у агентов нет права записи, а принимает изменения владелец.
 3. **Ключ API:** Settings → Secrets and variables → Actions → New repository secret, имя `ANTHROPIC_API_KEY`. Значение никому не пересылать.
 4. **Модель агентов (необязательно):** там же, вкладка Variables, `SDP_AGENT_MODEL`.
 5. **Ограничить Actions:** Settings → Actions → General → Allow … actions: разрешить только действия GitHub и `anthropics/claude-code-action`; Fork pull request workflows — Require approval for all outside collaborators.
 6. **Двухфакторный вход** в учётную запись GitHub.
 7. **Метки:** Actions → «Агенты: задачи» → Run workflow.
+8. **Actions → General:** Allow actions created by GitHub и `anthropics/claude-code-action@*`; Workflow permissions — Read; включить **Allow GitHub Actions to create and approve pull requests** (без этого задание отправки не откроет предложение изменений агента).
+9. **Минуты Actions** (закрытый репозиторий, Free — 2000 минут в месяц): каждое изменение — сборка на Linux и агенты; macOS — только вручную (Actions → macOS), минута macOS считается за 10.
 
 ## ⚠ Пределы
 - Полной защиты от копирования не бывает: закрытый репозиторий и доступ по списку защищают исходники, лицензия и подпись сборок защищают установку, но не от того, у кого есть доступ.
