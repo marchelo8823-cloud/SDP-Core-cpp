@@ -131,6 +131,38 @@ int main(int argc, char** argv) {
     c.command("sim reset");
     h = hold(c, c.clock() + 120, c.clock() + 200);
     CHECK(h.maxPos < 3.0 && h.maxHdg < 3.0, "курс вернулся: удержание снова в пределах 3 м и 3°");
+    std::printf("-- повторная потеря положения во время возврата --\n");
+    auto offPos = [&]() { for (auto& id : c.simIds()) if (id.rfind("GNSS", 0) == 0 || id == "LASER") c.command("sim off " + id); };
+    auto has = [&](const char* code) { for (auto& a : c.out().alarms) if (a.code == code) return true; return false; };
+    offPos();
+    { const double t1 = c.clock(); while (c.clock() < t1 + 300) c.cycle(); }
+    c.command("sim reset");
+    { const double t1 = c.clock(); while (c.clock() < t1 + 15) c.cycle(); }
+    CHECK(has("POS_RETURN"), "идёт возврат в точку");
+    offPos();
+    { const double t1 = c.clock(); bool d = false; while (c.clock() < t1 + 60) { c.cycle(); d = d || has("POS_DROPOUT"); }
+      CHECK(d && c.mode() == DpMode::AutoPosition, "во время возврата снова потеря: POS_DROPOUT, режим не снят"); }
+    log.clear();
+    c.command("sim reset");
+    { const double t1 = c.clock(); double load = 0;
+      while (c.clock() < t1 + 300) { c.cycle(); const auto& o = c.out(); if (has("POS_RETURN")) load = std::max({load, std::fabs(o.ctl.tau.X) / std::max(1.0, o.cap.X), std::fabs(o.ctl.tau.Y) / std::max(1.0, o.cap.Y)}); }
+      std::printf("   усилие при повторном возврате до %.0f %% возможностей\n", 100 * load);
+      CHECK(load < 0.8 && said(log, "Возврат в заданную точку завершён"), "после повторной потери возврат снова плавный и завершается"); }
+    h = hold(c, c.clock() + 10, c.clock() + 120);
+    CHECK(h.maxPos < 3.0, "удержание снова в пределах 3 м");
+
+    std::printf("-- одновременная потеря положения и курса --\n");
+    offPos();
+    for (auto& id : c.simIds()) if (id.rfind("GYRO", 0) == 0) c.command("sim off " + id);
+    { const double t1 = c.clock(); bool dr = false, lost = false, drop = false;
+      while (c.clock() < t1 + 45) { c.cycle(); dr = dr || has("HDG_DR"); lost = lost || has("HDG_LOST"); drop = drop || has("POS_DROPOUT"); }
+      CHECK(dr && lost && drop, "тревоги HDG_DR, затем HDG_LOST, и POS_DROPOUT");
+      CHECK(c.mode() == DpMode::AutoPosition, "режим не снят сам"); }
+    c.command("sim reset");
+    h = hold(c, c.clock() + 200, c.clock() + 300);
+    std::printf("   после возврата датчиков: до %.2f м, %.2f°\n", h.maxPos, h.maxHdg);
+    CHECK(h.maxPos < 3.0 && h.maxHdg < 3.0, "после возврата всех датчиков удержание в пределах 3 м и 3°");
+
     c.command("standby");
     for (int i = 0; i < 10; ++i) c.cycle();
     CHECK(c.state() == CoreState::Ready, "в ожидании с данными: ГОТОВ");

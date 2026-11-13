@@ -182,7 +182,8 @@ public:
         std::istringstream is(line); std::string c; is >> c;
         if (c.empty()) return;
         auto rest = [&]() { std::string r; std::getline(is, r); size_t i = 0; while (i < r.size() && r[i] == ' ') ++i; r = r.substr(i); while (!r.empty() && (r.back() == ' ' || r.back() == '\r')) r.pop_back();
-                            if (r.size() >= 2 && (r.front() == '"' || r.front() == '\'') && r.back() == r.front()) r = r.substr(1, r.size() - 2); return r; };
+                            if (r.size() >= 2 && (r.front() == '"' || r.front() == '\'') && r.back() == r.front()) r = r.substr(1, r.size() - 2);
+                            return r; };
         if (c == "quit" || c == "exit") { quit_ = true; return; }
         if (c == "help") { say(helpText()); return; }
         if (c == "status") { statusRequested_ = true; return; }
