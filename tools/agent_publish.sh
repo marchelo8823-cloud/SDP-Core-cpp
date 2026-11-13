@@ -9,7 +9,7 @@ BR=$(head -1 agent-out/ветка.txt)
 [[ "$BR" =~ ^[A-Za-z0-9/_.-]+$ ]] || { echo "::error::Недопустимое имя ветки — не отправляю."; exit 1; }
 git fetch -q agent-out/изменения.bundle "refs/heads/$BR:refs/heads/$BR"
 BASE=$(git merge-base "$BR" HEAD)
-BAD=$(git -c core.quotepath=off diff --name-only "$BASE" "$BR" | grep -Ev "$ALLOW" || true)
+BAD=$(git -c core.quotepath=off diff --no-renames --name-only "$BASE" "$BR" | grep -Ev "$ALLOW" || true)
 if [ -n "$BAD" ]; then
   echo "::error::Агент изменил файлы вне разрешённых — не отправляю:"; echo "$BAD"
   [ -n "$ISSUE" ] && gh issue comment "$ISSUE" --body "⚠ Изменения агента не отправлены: затронуты файлы вне разрешённых (${PREFIX}*):

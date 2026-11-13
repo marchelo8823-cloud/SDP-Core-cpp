@@ -40,7 +40,7 @@ def core_log(path, lim_m, lim_deg):
         rd = csv.DictReader(fh)
         miss = [k for k in need if k not in (rd.fieldnames or [])]
         if miss:
-            raise ReportError("в журнале нет столбцов: " + ", ".join(miss) + ". Нужен журнал ядра 1.3 (sdp_run --log).")
+            raise ReportError("в журнале нет столбцов: " + ", ".join(miss) + ". Есть: " + ", ".join(rd.fieldnames or []) + ". Нужен журнал ядра 1.3 (sdp_run --log).")
         for r in rd:
             try:
                 float(r["t_s"])

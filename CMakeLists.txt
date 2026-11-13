@@ -40,6 +40,9 @@ endforeach()
 foreach(t sentence_test telegram_test rls_test)
   dp_test(${t})
 endforeach()
+if(NOT WIN32)   # отправка изменений агентов: только разрешённые файлы
+  add_test(NAME publish_test COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/publish_test.sh ${CMAKE_CURRENT_SOURCE_DIR})
+endif()
 if(NOT WIN32)   # используют POSIX: виртуальный COM-порт и сокеты
   dp_test(nmea_test)
   dp_test(modbus_test)
