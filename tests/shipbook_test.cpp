@@ -58,6 +58,10 @@ int main(int argc, char** argv) {
       CHECK(std::fabs(c.est.drDrift5MinM - 9) < 1e-9, "«Уход за 5 мин без положения» прочитан"); }
     { AppCfg c; BookReport r; const bool ok = loadShipBook(bad + "/встречный_упор_без_угла.xlsx", c, r);
       CHECK(!ok && has(r.errors, "встречный упор задаётся парой"), "встречный упор без угла — ошибка с пояснением"); }
+    { AppCfg c; BookReport r; const bool ok = loadShipBook(bad + "/встречный_упор_много.xlsx", c, r);
+      CHECK(!ok && has(r.errors, "от 5 до 50 %"), "встречный упор 70 % — ошибка «от 5 до 50 %»"); }
+    { AppCfg c; BookReport r; const bool ok = loadShipBook(bad + "/уход_ноль.xlsx", c, r);
+      CHECK(!ok && has(r.errors, "должен быть больше нуля"), "уход за 5 мин = 0 — ошибка"); }
     { AppCfg c; BookReport r; loadShipBook(argv[2], c, r);
       CHECK(c.thrusters[0].preloadPct == 0 && std::fabs(c.est.drDrift5MinM - 14) < 1e-9, "пример без встречного упора; уход по умолчанию 14 м"); }
     { AppCfg c; BookReport r; const bool ok = loadShipBook(bad + "/выдача.xlsx", c, r);
