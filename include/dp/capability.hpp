@@ -101,7 +101,6 @@ inline CapCurve capCurve(const VesselCfg& v, const std::vector<ThrusterCfg>& th,
 inline std::vector<CapCurve> capScenarios(const AppCfg& cfg, const CapEnv& e) {
     std::vector<ThrusterCfg> base; for (const auto& t : cfg.thrusters) if (t.maxForward > 0 && t.enabled) base.push_back(t);
     std::vector<CapCurve> out;
-    const bool none[2] = {false, false};
     out.push_back(capCurve(cfg.vessel, base, 1.0, e, "Все движители"));
     for (size_t i = 0; i < base.size(); ++i) {
         std::vector<ThrusterCfg> t2 = base; t2[i].enabled = false;

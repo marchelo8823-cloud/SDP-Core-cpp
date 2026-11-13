@@ -24,7 +24,8 @@ static R run(bool high, bool minp, double wind, double T = 500) {
     for (double t = 0; t < T; t += dt) {
         sim.step(dt); auto o = eng.step(dt, sim.measure()); sim.applyCommands(o.cmds);
         bool hi = false; for (auto& a : o.alarms) if (a.code == "HIGH_LOAD") hi = true;
-        if (hi != prev) ++r.alarmEdges; prev = hi;
+        if (hi != prev) ++r.alarmEdges;
+        prev = hi;
         if (last.size() != o.cmds.size()) last.assign(o.cmds.size(), 0.0);
         if (t > 150) {
             double s = 0, act = 0;

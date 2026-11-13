@@ -141,7 +141,6 @@ public:
         o.est = es;
 
         // --- возможности и управление
-        const ControlCfg& cc0 = ctl_.cfg();
         const double effScale = thrustScale;     // допустимая доля упора определяется электростанцией
         const Capability cap = alloc_.capability(effScale);
         o.cap = cap;

@@ -17,7 +17,7 @@ static R run(double turb, bool calm, double T) {
     for (int i = 0; i < 100; ++i) { sim.step(dt); eng.step(dt, sim.measure()); }
     eng.setMode(DpMode::AutoPosition);
     eng.controller().setSetpoint({sim.truth().n, sim.truth().e, 10.0});
-    R r; int cnt = 0; double pn = sim.truth().n, pe = sim.truth().e, pu = 0, pv = 0; double wmin = 1e9, wmax = -1e9;
+    R r; int cnt = 0; double pn = sim.truth().n, pe = sim.truth().e, pu = 0, pv = 0; double wmin = 1e9;
     const double tCalm = 300;
     for (double t = 0; t < T; t += dt) {
         if (calm && std::fabs(t - tCalm) < dt / 2) { sim.target().windSpeed = 0; sim.target().currentSpeed = 0; sim.target().hs = 0; }
