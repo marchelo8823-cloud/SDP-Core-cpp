@@ -53,6 +53,7 @@ dp_test(shipbook_test ${D}/Данные_судна_шаблон.xlsx ${D}/Дан
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
   add_test(NAME report_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/report_test.py $<TARGET_FILE:sdp_run> ${CMAKE_CURRENT_SOURCE_DIR})
+  add_test(NAME fetch_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fetch_test.py ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 # сценарии рабочей программы с критериями «#! ...» в самих файлах
 file(GLOB DP_SCENARIOS ${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/*.txt)
