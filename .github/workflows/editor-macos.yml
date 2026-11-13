@@ -22,7 +22,9 @@ jobs:
           cmake -S . -B build -DSDP_BUILD_EDITOR=ON -DCMAKE_PREFIX_PATH="$(brew --prefix qt)"
           cmake --build build -j3
       - name: Тесты
-        run: ctest --test-dir build --output-on-failure --timeout 400 2>&1 | tee тесты_macos.txt
+        run: |
+          set -o pipefail
+          ctest --test-dir build --output-on-failure --timeout 400 2>&1 | tee тесты_macos.txt
       - name: Запуск без экрана
         run: QT_QPA_PLATFORM=offscreen ./build/shipedit/sdp_ship "data/Данные_судна_пример.xlsx" --tab 0 --screenshot снимок_macos.png
       - uses: actions/upload-artifact@v6
