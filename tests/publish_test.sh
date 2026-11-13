@@ -30,5 +30,11 @@ run agent/data-4 'git rm -q README.md' agent/data- '^отчёты/'
 [ $? -ne 0 ] && ! pushed agent/data-4 && ok "удаление файла вне разрешённых путей: не отправлено" || bad "удаление вне путей отправлено"
 run main 'mkdir -p отчёты && echo r > отчёты/x.md' agent/data- '^отчёты/'
 [ $? -ne 0 ] && ok "ветка не с префиксом агента (main): не отправлено" || bad "ветка без префикса отправлена"
+# GitHub запрещает Actions открывать предложения изменений: ветка отправлена, в задаче — что включить и ссылка
+printf '#!/bin/sh\necho "[gh $*]" >> "%s/gh.log"\ncase "$1 $2" in "pr create") echo "pull request create failed: GraphQL: GitHub Actions is not permitted to create or approve pull requests (createPullRequest)" >&2; exit 1;; esac\n' "$T" > "$T/bin/gh"
+run agent/data-8 'mkdir -p отчёты/8 && echo r > отчёты/8/о.md' agent/data- '^отчёты/'
+rc=$?
+[ $rc -ne 0 ] && pushed agent/data-8 && ok "запрет на предложения изменений: ветка отправлена, задание завершилось ошибкой" || bad "запрет на предложения изменений не отмечен"
+grep -q "Allow GitHub Actions to create and approve pull requests" "$T/gh.log" && ok "в задаче написано, какую настройку включить, и ссылка" || bad "нет подсказки в задаче"
 [ $fails -eq 0 ] && echo "ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ" || echo "ОШИБОК: $fails"
 exit $fails
