@@ -320,6 +320,7 @@ public:
     bool simRunning() const { return static_cast<bool>(sim_); }
     double simSpeed() const { return sim_ ? simSpeed_ : 1.0; }
     int takenCount() { if (!sh_) return 0; initTaken(); int n = 0; for (char c : taken_) n += c ? 1 : 0; return n; }
+    bool taken(size_t i) const { return i < taken_.size() && taken_[i]; }   // движитель под управлением ядра (для пульта)
     double dt() const { return dt_; }
     double clock() const { return t_; }
     const EngineOutput& out() const { return out_; }

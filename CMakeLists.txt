@@ -72,4 +72,8 @@ option(SDP_BUILD_EDITOR "Собрать редактор данных судна
 if(SDP_BUILD_EDITOR)
   add_subdirectory(shipedit)
 endif()
+option(SDP_BUILD_HMI "Собрать пульт оператора sdp_hmi (нужен Qt 6 Quick)" OFF)
+if(SDP_BUILD_HMI)
+  add_subdirectory(hmi)
+endif()
 dp_test(design_test ${D}/Данные_судна_пример.xlsx ${CMAKE_CURRENT_BINARY_DIR})
