@@ -20,4 +20,13 @@ $BAD
 fi
 git push -u origin "$BR"
 TITLE=$(grep -m1 -E '^# ' agent-out/описание.md | sed 's/^# //' || true); [ -n "$TITLE" ] || TITLE="Изменения агента: $BR"
-gh pr create --head "$BR" --title "$TITLE" --body-file agent-out/описание.md || echo "Предложение изменений уже есть или не создано."
+if ! OUT=$(gh pr create --head "$BR" --title "$TITLE" --body-file agent-out/описание.md 2>&1); then
+  echo "$OUT"
+  if echo "$OUT" | grep -q "already exists"; then echo "Предложение изменений для $BR уже есть."; exit 0; fi
+  URL="https://github.com/${GITHUB_REPOSITORY:-}/compare/${BR}?expand=1"
+  MSG="⚠ Ветка агента \`$BR\` отправлена, но предложение изменений не открылось."
+  echo "$OUT" | grep -q "not permitted to create" && MSG="$MSG GitHub запрещает Actions открывать предложения изменений: Settings → Actions → General → **Allow GitHub Actions to create and approve pull requests** → Save."
+  [ -n "$ISSUE" ] && gh issue comment "$ISSUE" --body "$MSG Открыть вручную: $URL" || true
+  echo "::error::Предложение изменений не открыто: $OUT"; exit 1
+fi
+echo "$OUT"
