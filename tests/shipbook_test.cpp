@@ -53,7 +53,7 @@ int main(int argc, char** argv) {
       CHECK(ok && c.thrusters[0].forbidden.size() == 2 && std::fabs(c.thrusters[0].forbidden[1].fromDeg - 60) < 1e-9 && std::fabs(c.thrusters[0].rateFracPerS - 0.15) < 1e-9, "запретные сектора и темп 15 %/с прочитаны"); }
     { AppCfg c; BookReport r; const bool ok = loadShipBook(bad + "/встречный_упор.xlsx", c, r);
       for (auto& e : r.errors) std::printf("     %s\n", e.c_str());
-      CHECK(ok && std::fabs(c.thrusters[0].prefDeg - 300) < 1e-9 && std::fabs(c.thrusters[0].preloadPct - 20) < 1e-9 && std::fabs(c.thrusters[1].prefDeg - 60) < 1e-9 && c.thrusters[2].preloadPct == 0,
+      CHECK(ok && std::fabs(c.thrusters[0].prefDeg - 90) < 1e-9 && std::fabs(c.thrusters[0].preloadPct - 20) < 1e-9 && std::fabs(c.thrusters[1].prefDeg - 270) < 1e-9 && c.thrusters[2].preloadPct == 0,
             "встречный упор колонок (угол и упор) прочитан, у туннельных — нет");
       CHECK(std::fabs(c.est.drDrift5MinM - 9) < 1e-9, "«Уход за 5 мин без положения» прочитан"); }
     { AppCfg c; BookReport r; const bool ok = loadShipBook(bad + "/встречный_упор_без_угла.xlsx", c, r);

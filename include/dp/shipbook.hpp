@@ -167,7 +167,10 @@ inline bool toJson(const xlsx::Book& book, std::string& out, BookReport& rep) {
             if (D.opt(r, "Выдержка расхождения, с", v, 1, "")) j += ",\"fbDiffDelayS\":" + num(v);
             if (jt == "azimuth") {   // встречный упор (bias): колонка постоянно держит упор вдоль предпочтительного угла, малые изменения силы — без разворота
                 double pd = 0, pp = 0; const bool hp = D.opt(r, "Предпочтительный угол, °", pd, 1, ""), hq = D.opt(r, "Встречный упор, %", pp, 1, "");
-                if (hp && hq && pp > 0) { if (pp > 50) rep.errors.push_back(D.where(r, "Встречный упор, %") + ": не больше 50 %"); j += ",\"prefDeg\":" + num(pd) + ",\"preloadPct\":" + num(pp); }
+                if (hp && hq) {
+                    if (pp < 5 || pp > 50) rep.errors.push_back(D.where(r, "Встречный упор, %") + ": от 5 до 50 %");
+                    else j += ",\"prefDeg\":" + num(pd) + ",\"preloadPct\":" + num(pp);
+                }
                 else if (hp != hq) rep.errors.push_back(D.where(r, hp ? "Встречный упор, %" : "Предпочтительный угол, °") + ": встречный упор задаётся парой — угол и упор");
             }
             const std::string fs = D.cell(r, "Запретные сектора, °");

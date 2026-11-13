@@ -161,7 +161,7 @@ public:
         if (needPos && es.posValid && es.refLost) {
             if (es.posDropout) {
                 char u[48]; std::snprintf(u, sizeof u, "%.1f", es.drDriftM);
-                o.alarms.push_back({"POS_DROPOUT", "Потеря положения — нет измерений " + std::to_string(static_cast<int>(es.refLostS)) + " с, удержание по модели (счисление), вероятный уход до " + u + " м", true, 1});
+                o.alarms.push_back({"POS_DROPOUT", "Потеря положения — нет измерений " + std::to_string(static_cast<int>(es.refLostS)) + " с, удержание по модели (счисление), вероятный уход ≈ " + u + " м (оценка)", true, 1});
                 dropLatched_ = true;
             } else o.alarms.push_back({"POS_ALL_REJ", "Все системы положения отклонены или недоступны — удержание по модели", true, 1});
         }
@@ -239,7 +239,7 @@ public:
             if (!highLoad_) { onT_ = u > 0.9 && !(o.alloc.turning && !overCap) ? onT_ + dt : (u > 0.9 ? onT_ : 0.0); if (onT_ >= 3.0) { highLoad_ = true; offT_ = 0; } }
             else { offT_ = u < 0.8 ? offT_ + dt : 0.0; if (offT_ >= 3.0) { highLoad_ = false; onT_ = 0; } }
         }
-        if (m == DpMode::Standby || m == DpMode::Manual || !ok) { highLoad_ = false; onT_ = offT_ = 0; }
+        if (m == DpMode::Standby || m == DpMode::Manual || !ok) { highLoad_ = false; onT_ = offT_ = 0; satT_ = 0; }
         if (highLoad_) o.alarms.push_back({"HIGH_LOAD", "Загрузка движителей выше 90 % допустимой", false});
         // --- радиус удержания: предупреждение при 80 % радиуса, аларм при выходе за радиус (с выдержкой и гистерезисом)
         if (holdR_ > 0 && ok && (m == DpMode::AutoPosition || m == DpMode::Track)) {

@@ -42,7 +42,7 @@ def outp(wb):
 make("выдача.xlsx", outp)
 def bias(wb):
     ws = wb["Движители"]; ca, cp = col(ws, "Предпочтительный угол, °"), col(ws, "Встречный упор, %")
-    ws.cell(row=2, column=ca, value=300); ws.cell(row=2, column=cp, value=20); ws.cell(row=3, column=ca, value=60); ws.cell(row=3, column=cp, value=20)
+    ws.cell(row=2, column=ca, value=90); ws.cell(row=2, column=cp, value=20); ws.cell(row=3, column=ca, value=270); ws.cell(row=3, column=cp, value=20)
     k = wb["Корпус"]; k.cell(row=row(k, "Уход за 5 мин без положения"), column=2, value=9)
 make("встречный_упор.xlsx", bias)
 make("встречный_упор_без_угла.xlsx", lambda wb: wb["Движители"].cell(row=2, column=col(wb["Движители"], "Встречный упор, %"), value=20))
