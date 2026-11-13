@@ -5,3 +5,5 @@ build*/
 test-out/
 _base/
 вход/
+agent-out/
+agent-pr.md

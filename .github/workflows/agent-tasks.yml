@@ -114,11 +114,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
       issues: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/checkout@v5
         with:
           path: _base
@@ -143,4 +144,39 @@ jobs:
           claude_args: |
             --model ${{ env.MODEL }}
             --max-turns 60
-            --allowedTools Read,Glob,Grep,Edit,Write,Bash(tools/ci_build.sh:*),Bash(cmake:*),Bash(ctest:*),Bash(./build/sdp_run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git switch -c agent/admin-:*),Bash(git add:*),Bash(git commit:*),Bash(git push -u origin agent/admin-:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr create:*)
+            --allowedTools Write(agent-pr.md),Read,Glob,Grep,Edit,Write,Bash(tools/ci_build.sh:*),Bash(cmake:*),Bash(ctest:*),Bash(./build/sdp_run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git switch -c agent/admin-:*),Bash(git add:*),Bash(git commit:*),Bash(gh issue view:*),Bash(gh issue comment:*)
+      - name: Изменения агента → файл для отправки
+        if: always()
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: tools/agent_collect.sh "agent/admin-${{ github.event.issue.number }}"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: agent-out-admin-${{ github.run_id }}
+          path: agent-out/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  admin-publish:
+    needs: admin
+    if: always() && needs.admin.result != 'skipped'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v6
+        with:
+          name: agent-out-admin-${{ github.run_id }}
+          path: agent-out
+        continue-on-error: true
+      - name: Проверка путей и отправка ветки агента
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: tools/agent_publish.sh "agent/admin-" '^(tools/|docs/|отчёты/|data/|tests/|apps/|include/|shipedit/|SECURITY\.md$|README\.md$|ЗАПУСК\.md$|CMakeLists\.txt$|\.gitignore$)' "${{ github.event.issue.number }}"
