@@ -29,7 +29,7 @@ struct Sheet {
     // значение: число, если строка читается как число (с точкой), иначе текст
     void value(size_t r, size_t c, const std::string& t, int st) {
         bool num = !t.empty();
-        if (num) { try { size_t k = 0; std::stod(t, &k); num = k == t.size() && t.find(',') == std::string::npos; } catch (...) { num = false; } }
+        if (num) { try { size_t k = 0; (void)std::stod(t, &k); num = k == t.size() && t.find(',') == std::string::npos; } catch (...) { num = false; } }
         set(r, c, t, st, num);
     }
 };
