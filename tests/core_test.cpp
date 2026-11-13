@@ -92,8 +92,10 @@ int main(int argc, char** argv) {
     while (c.clock() < tl + 60) { c.cycle(); for (auto& a : c.out().alarms) drop = drop || a.code == "POS_DROPOUT"; }
     CHECK(drop && c.mode() == DpMode::AutoPosition, "без положения: тревога POS_DROPOUT, удержание по счислению, режим не снят");
     CHECK(std::fabs(c.out().ctl.refN - sp0n) < 0.01 && std::fabs(c.out().ctl.refE - sp0e) < 0.01, "при потере положения уставка оператора не переносится");
-    bool unc = false; for (auto& a : c.out().alarms) if (a.code == "POS_DROPOUT") unc = a.text.find("погрешность положения") != std::string::npos;
-    CHECK(unc, "в тревоге POS_DROPOUT показана погрешность положения по счислению");
+    bool unc = false; for (auto& a : c.out().alarms) if (a.code == "POS_DROPOUT") unc = a.text.find("вероятный уход до") != std::string::npos;
+    CHECK(unc, "в тревоге POS_DROPOUT показан вероятный уход при счислении");
+    { const double d = c.out().est.drDriftM, t = c.out().est.refLostS;
+      CHECK(std::fabs(d - 14.0 * (t / 300.0) * (t / 300.0)) < 0.05, "вероятный уход = 14 м·(t/300 с)² (значение по умолчанию)"); }
     // долгая потеря: судно уходит; после возврата измерений — плавный возврат в заданную точку, без насыщения движителей
     while (c.clock() < tl + 300) c.cycle();
     log.clear();

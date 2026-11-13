@@ -40,5 +40,11 @@ def outp(wb):
     for i, r in enumerate([("AZ1", "упор", 100, 100, "да"), ("AZ1", "угол", 101, 10, "нет")]):
         for j, v in enumerate(r): ws.cell(row=h + 1 + i, column=1 + j, value=v)
 make("выдача.xlsx", outp)
+def bias(wb):
+    ws = wb["Движители"]; ca, cp = col(ws, "Предпочтительный угол, °"), col(ws, "Встречный упор, %")
+    ws.cell(row=2, column=ca, value=300); ws.cell(row=2, column=cp, value=20); ws.cell(row=3, column=ca, value=60); ws.cell(row=3, column=cp, value=20)
+    k = wb["Корпус"]; k.cell(row=row(k, "Уход за 5 мин без положения"), column=2, value=9)
+make("встречный_упор.xlsx", bias)
+make("встречный_упор_без_угла.xlsx", lambda wb: wb["Движители"].cell(row=2, column=col(wb["Движители"], "Встречный упор, %"), value=20))
 open(os.path.join(out, "не_книга.xlsx"), "w").write("это не книга Excel, а обычный текст\n" * 5)
 print("готово")

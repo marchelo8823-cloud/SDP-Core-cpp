@@ -76,7 +76,8 @@ struct EstimatorCfg {
     double posDropoutS = 20.0;        // «Position dropout» (K-Pos): столько секунд без принятых измерений положения
     double deadReckonMaxS = 0.0;      // 0 — счисление без ограничения по времени (как в K-Pos); иначе после этого времени положение считается потерянным ⚠
     double hdgTimeoutS = 2.0;
-    double hdgDeadReckonS = 30.0;     // потеря курса: столько секунд курс держится по счислению (модель судна), затем курс считается потерянным
+    double hdgDeadReckonS = 30.0;
+    double drDrift5MinM = 14.0;       // вероятный уход судна за 5 мин счисления, м (оценка «k·t²»; по имитатору, уточняется на испытаниях)     // потеря курса: столько секунд курс держится по счислению (модель судна), затем курс считается потерянным
     double windTimeoutS = 6.0;
     double gateSigma = 5.0;          // порог отбраковки по невязке
     int resetAfterRejects = 6;       // после стольких подряд отбракованных измерений принимаем скачок
@@ -140,7 +141,8 @@ struct EstimatorState {
     // потеря опорных систем (как K-Pos): refLost — все системы положения отклонены или недоступны (положение держится по модели, «счисление»),
     // posDropout — так длится дольше posDropoutS (20 с). refLostS — сколько секунд положение не уточнялось измерениями.
     bool refLost = false, posDropout = false; double refLostS = 0;
-    double posUncertM = 0;            // погрешность положения по фильтру (1 СКО, м): растёт при счислении
+    double posUncertM = 0;            // погрешность положения по фильтру (1 СКО, м): растёт при счислении; ⚠ для прогноза ухода сильно завышена
+    double drDriftM = 0;              // вероятный уход при счислении, м: drDrift5MinM·(t/300 с)², t — сколько секунд нет измерений положения
     // курс: hdgMeasured — есть достоверные данные гирокомпасов; hdgDeadReckon — их нет, курс держится по счислению (не дольше hdgDeadReckonS);
     // hdgValid — курс пригоден для управления (измерен или по счислению); hdgLostS — сколько секунд нет данных гирокомпасов
     bool hdgMeasured = false, hdgDeadReckon = false; double hdgLostS = 0;
@@ -378,6 +380,7 @@ private:
         s_.refLost = kn_.inited && s_.refLostS > ec_.posTimeoutS;
         s_.posDropout = kn_.inited && s_.refLostS >= ec_.posDropoutS;
         if (kn_.inited && ec_.deadReckonMaxS > 0 && s_.refLostS > ec_.deadReckonMaxS) s_.posValid = false;
+        { const double q = s_.refLost ? s_.refLostS / 300.0 : 0.0; s_.drDriftM = ec_.drDrift5MinM * q * q; }
         // события для оператора: сохраняются, пока последнее измерение системы не прошло проверку
         s_.posAlerts.clear();
         for (const auto& p : fr.pos) {
