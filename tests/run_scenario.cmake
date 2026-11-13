@@ -3,6 +3,7 @@
 #   #! нет: <текст>             — такого текста в выводе быть не должно
 #   #! итог_положение < <м>     — наибольшая ошибка положения из строки ИТОГ меньше порога
 #   #! итог_курс < <°>          — наибольшая ошибка курса из строки ИТОГ меньше порога
+#   #! не больше <N>: <текст>   — текст встречается в выводе не больше N раз (например, тревога не мигает)
 # Запуск: cmake -DSDP_RUN=<sdp_run> -DSCEN=<сценарий.txt> -P run_scenario.cmake
 execute_process(COMMAND ${SDP_RUN} --script ${SCEN} --status 30 OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
 set(out "${out}${err}")
@@ -36,6 +37,18 @@ foreach(c IN LISTS crit)
       math(EXPR bad "${bad}+1")
     else()
       message("  ok нет: ${CMAKE_MATCH_1}")
+    endif()
+  elseif(c MATCHES "^не больше ([0-9]+): *(.+)$")
+    set(lim "${CMAKE_MATCH_1}")
+    set(txt "${CMAKE_MATCH_2}")
+    string(REPLACE "${txt}" "\x01" tmp "${out}")
+    string(REGEX MATCHALL "\x01" hits "${tmp}")
+    list(LENGTH hits cnt)
+    if(cnt GREATER lim)
+      message("FAIL «${txt}» встречается ${cnt} раз, допустимо не больше ${lim}")
+      math(EXPR bad "${bad}+1")
+    else()
+      message("  ok «${txt}»: ${cnt} раз (не больше ${lim})")
     endif()
   elseif(c MATCHES "^итог_(положение|курс) *< *([0-9.]+)$")
     set(what "${CMAKE_MATCH_1}")
