@@ -47,6 +47,9 @@ struct ControlCfg {
     double refAccel = 0.02;           // м/с²
     double refMaxRotDegS = 1.0;       // °/с
     double refRotAccelDegS2 = 0.05;
+    // возврат в заданную точку после потери положения: если судно ушло дальше returnStartM, опорная точка начинается с того места,
+    // где судно оказалось, и идёт к заданной точке не быстрее returnSpeedMS (0 — без ограничения, только refMaxSpeed)
+    double returnSpeedMS = 0.2, returnStartM = 2.0;
     // автопилот
     double apSpeedKp = 0.15, apSpeedKi = 0.01;   // доли массы на (м/с)
 };
@@ -314,8 +317,19 @@ public:
         wpIdx_ = 0; trackDone_ = false; trackStarted_ = false;
         speedInt_ = 0; biasInit_ = false;
         holdPsi_ = est.psi; holdValid_ = false;
+        returning_ = false;
     }
-    void setSetpoint(const Setpoint& s) { sp_ = s; }
+    void setSetpoint(const Setpoint& s) { sp_ = s; returning_ = false; }   // новая уставка от оператора отменяет возврат
+    // Возврат в заданную точку после потери положения: уставка не меняется, опорная точка (и курс) начинают с того места, где судно
+    // оказалось по оценке, holdS секунд стоят на нём (оценка успокаивается после первых измерений), затем идут к уставке не быстрее speedMS.
+    void beginReturn(const EstimatorState& est, double speedMS, double holdS) {
+        ref_.reset(est.n, est.e, est.psi);
+        { double dn, de; bodyToNe(pvx_, pvy_, est.psi, dn, de); pref_.reset(est.n + dn, est.e + de, est.psi); }
+        returning_ = true; returnCap_ = std::max(0.0, speedMS); returnHoldS_ = std::max(0.0, holdS);
+    }
+    bool returning() const { return returning_; }
+    // расстояние от опорной точки до уставки (точки центра вращения), м — сколько осталось вернуться
+    double returnLeftM() const { return std::hypot(sp_.n - pref_.n, sp_.e - pref_.e); }
     // Центр вращения (точка судна: вдоль + к носу, поперёк + к правому борту, м). Уставка положения относится к этой точке:
     // удерживается она, а судно при смене курса поворачивается вокруг неё. Мидель (0; 0) — точка управления.
     double pivotX() const { return pvx_; }
@@ -360,6 +374,11 @@ public:
 
         switch (mode_) {
             case DpMode::AutoPosition:
+                if (returning_ && returnHoldS_ > 0) {   // выдержка после возврата измерений: опорная точка — там, где судно
+                    returnHoldS_ -= dt;
+                    ref_.reset(est.n, est.e, est.psi);
+                    double dn, de; bodyToNe(pvx_, pvy_, est.psi, dn, de); pref_.reset(est.n + dn, est.e + de, est.psi);
+                }
                 if (pivotOff()) {   // удерживается точка центра вращения; положение судна следует за курсом задания
                     pref_.moveTo(dt, sp_.n, sp_.e, 0, 0, eff());
                     ref_.turnTo(dt, deg2rad(sp_.psiDeg), eff());
@@ -372,6 +391,8 @@ public:
                     ref_.turnTo(dt, deg2rad(sp_.psiDeg), eff());
                     pref_ = ref_;
                 }
+                if (returning_ && returnHoldS_ <= 0 && returnLeftM() < 0.1 && std::hypot(pref_.vn, pref_.ve) < 0.02 &&
+                    std::fabs(rad2deg(wrapPi(deg2rad(sp_.psiDeg) - ref_.psi))) < 0.2) returning_ = false;
                 posCtl = hdgCtl = true;
                 break;
             case DpMode::AutoHeading:
@@ -440,7 +461,7 @@ public:
         if (hdgCtl) {
             const double eh = wrapPi(est.psi - hdgTarget);
             const double rr = est.r - ref_.r;
-            law.N += lawN_->compute(dead(eh, deg2rad(hdgDead())), rr, 0.95 * cap.N);
+            if (!est.hdgDeadReckon) law.N += lawN_->compute(dead(eh, deg2rad(hdgDead())), rr, 0.95 * cap.N);
             o.errHdgDeg = rad2deg(eh);
         }
 
@@ -467,6 +488,11 @@ public:
         if (!posCtl) { ff.X = (mode_ == DpMode::Autopilot ? 0 : 0); ff.Y = 0; }
         Wrench raw{law.X + ff.X + bs.X, law.Y + ff.Y + bs.Y, law.N + ff.N + bs.N};
         raw.X = clampd(raw.X, -cap.X, cap.X); raw.Y = clampd(raw.Y, -cap.Y, cap.Y); raw.N = clampd(raw.N, -cap.N, cap.N);
+        // счисление курса (гирокомпасов нет): курс не наблюдается, и замкнутый контур курса по прогнозу уводит судно (оценка момента
+        // шумит, а регулятор отрабатывает её как настоящую ошибку). Поэтому момент держится таким, каким он был в среднем за ~10 с до потери
+        if (hdgCtl && est.hdgDeadReckon) raw.N = nHeld_;
+        else if (hdgCtl) nHeld_ += (raw.N - nHeld_) * std::min(1.0, dt / 10.0);
+        else nHeld_ = raw.N;
         const double a = dt / (cfg_.forceFilterS + dt);
         filt_.X += a * (raw.X - filt_.X); filt_.Y += a * (raw.Y - filt_.Y); filt_.N += a * (raw.N - filt_.N);
         o.tau = filt_; o.law = law; o.windFF = ff; o.bias = bs;
@@ -546,10 +572,13 @@ private:
     ControlCfg eff() const {
         ControlCfg c = cfg_;
         if (capSpeed_ > 0) { c.refMaxSpeed = std::min(c.refMaxSpeed, capSpeed_); c.refCapTotal = true; }
+        if (returning_ && returnCap_ > 0) { c.refMaxSpeed = std::min(c.refMaxSpeed, returnCap_); c.refCapTotal = true; }
         if (capRot_ > 0) c.refMaxRotDegS = std::min(c.refMaxRotDegS, capRot_);
         return c;
     }
     double capSpeed_ = 0, capRot_ = 0;
+    bool returning_ = false; double returnCap_ = 0, returnHoldS_ = 0;
+    double nHeld_ = 0;   // момент по курсу, сглаженный за ~10 с: держится при счислении курса
     VesselCfg vcfg_;
     ControlCfg cfg_;
     Inertia in_;

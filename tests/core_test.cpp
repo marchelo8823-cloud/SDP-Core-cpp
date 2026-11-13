@@ -83,15 +83,54 @@ int main(int argc, char** argv) {
     std::printf("   отклонение до %.2f м\n", h.maxPos);
     CHECK(h.maxPos < 5.0, "позиция удерживается (меньше 5 м)");
     c.command("sim thr on BOW1");
+    c.command("thr_take BOW1");   // после отказа движитель берётся в управление заново
 
     std::printf("-- потеря всех систем положения --\n");
+    const double sp0n = c.out().ctl.refN, sp0e = c.out().ctl.refE;
     for (auto& id : c.simIds()) if (id.rfind("GNSS", 0) == 0 || id == "LASER") c.command("sim off " + id);
     const double tl = c.clock(); bool drop = false;
     while (c.clock() < tl + 60) { c.cycle(); for (auto& a : c.out().alarms) drop = drop || a.code == "POS_DROPOUT"; }
     CHECK(drop && c.mode() == DpMode::AutoPosition, "без положения: тревога POS_DROPOUT, удержание по счислению, режим не снят");
+    CHECK(std::fabs(c.out().ctl.refN - sp0n) < 0.01 && std::fabs(c.out().ctl.refE - sp0e) < 0.01, "при потере положения уставка оператора не переносится");
+    bool unc = false; for (auto& a : c.out().alarms) if (a.code == "POS_DROPOUT") unc = a.text.find("погрешность положения") != std::string::npos;
+    CHECK(unc, "в тревоге POS_DROPOUT показана погрешность положения по счислению");
+    // долгая потеря: судно уходит; после возврата измерений — плавный возврат в заданную точку, без насыщения движителей
+    while (c.clock() < tl + 300) c.cycle();
+    log.clear();
     c.command("sim reset");
-    h = hold(c, c.clock() + 120, c.clock() + 300);
+    const double tRet = c.clock(); double vmax = 0, load = 0; bool ret = false;
+    while (c.clock() < tRet + 250) {
+        c.cycle(); const auto& s = c.sim()->truth();
+        bool r = false; for (auto& a : c.out().alarms) r = r || a.code == "POS_RETURN";
+        ret = ret || r;
+        if (r) { const auto& o = c.out(); load = std::max({load, std::fabs(o.ctl.tau.X) / std::max(1.0, o.cap.X), std::fabs(o.ctl.tau.Y) / std::max(1.0, o.cap.Y)}); }
+        if (r && c.clock() > tRet + 30) vmax = std::max(vmax, std::hypot(s.u, s.v));
+    }
+    std::printf("   скорость судна при возврате (после первых 30 с) до %.2f м/с, усилие до %.0f %% возможностей\n", vmax, 100 * load);
+    CHECK(said(log, "Положение восстановлено") && ret, "после возврата измерений: сообщение и тревога POS_RETURN");
+    CHECK(vmax < 0.3, "возврат в точку не быстрее 0,2 м/с (с запасом на волну и порывы — меньше 0,3)");
+    CHECK(load < 0.8, "возврат не полным упором: усилие меньше 80 % возможностей");
+    CHECK(said(log, "Возврат в заданную точку завершён"), "возврат завершён");
+    h = hold(c, c.clock() + 10, c.clock() + 150);
     CHECK(h.maxPos < 3.0, "положение вернулось: удержание снова в пределах 3 м");
+
+    std::printf("-- потеря курса --\n");
+    for (auto& id : c.simIds()) if (id.rfind("GYRO", 0) == 0) c.command("sim off " + id);
+    const double th0 = c.clock(); bool hdr = false, hlost = false; double thrMin = 1e9, tLost = -1;
+    while (c.clock() < th0 + 40) {
+        c.cycle();
+        double sum = 0; for (auto& k : c.out().cmds) sum += std::fabs(k.pct);
+        bool l = false; for (auto& a : c.out().alarms) { hdr = hdr || a.code == "HDG_DR"; l = l || a.code == "HDG_LOST"; }
+        if (l && tLost < 0) tLost = c.clock() - th0;
+        hlost = hlost || l;
+        if (c.clock() > th0 + 3 && c.clock() < th0 + 30) thrMin = std::min(thrMin, sum);
+    }
+    std::printf("   курс снят через %.0f с\n", tLost);
+    CHECK(hdr && thrMin > 1.0, "без гирокомпасов: тревога HDG_DR, упор не снимается");
+    CHECK(hlost && tLost > 30 && tLost < 35, "через 30 с счисления курса: HDG_LOST и нулевой упор");
+    c.command("sim reset");
+    h = hold(c, c.clock() + 120, c.clock() + 200);
+    CHECK(h.maxPos < 3.0 && h.maxHdg < 3.0, "курс вернулся: удержание снова в пределах 3 м и 3°");
     c.command("standby");
     for (int i = 0; i < 10; ++i) c.cycle();
     CHECK(c.state() == CoreState::Ready, "в ожидании с данными: ГОТОВ");

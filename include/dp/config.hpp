@@ -115,7 +115,7 @@ inline bool loadConfigText(const std::string& text, AppCfg& cfg, json::Report& r
       c.posTolM = o.num("posTolM", c.posTolM); c.velTolMS = o.num("velTolMS", c.velTolMS); c.hdgTolDeg = o.num("hdgTolDeg", c.hdgTolDeg); c.rotTolDegS = o.num("rotTolDegS", c.rotTolDegS);
       c.effortFrac = o.num("effortFrac", c.effortFrac); c.mpcHorizon = o.integer("mpcHorizon", c.mpcHorizon); c.mpcStepS = o.num("mpcStepS", c.mpcStepS);
       c.mpcRateWeight = o.num("mpcRateWeight", c.mpcRateWeight); c.forceFilterS = o.num("forceFilterS", c.forceFilterS); c.biasLimitFrac = o.num("biasLimitFrac", c.biasLimitFrac); c.biasFilterS = o.num("biasFilterS", c.biasFilterS);
-      c.windFeedForward = o.boolean("windFeedForward", c.windFeedForward); c.waveFeedForward = o.boolean("waveFeedForward", c.waveFeedForward); c.refMaxSpeed = o.num("refMaxSpeed", c.refMaxSpeed); c.refAccel = o.num("refAccel", c.refAccel);
+      c.windFeedForward = o.boolean("windFeedForward", c.windFeedForward); c.waveFeedForward = o.boolean("waveFeedForward", c.waveFeedForward); c.refMaxSpeed = o.num("refMaxSpeed", c.refMaxSpeed); c.returnSpeedMS = std::max(0.0, o.num("returnSpeedMS", c.returnSpeedMS)); c.returnStartM = std::max(0.0, o.num("returnStartM", c.returnStartM)); c.refAccel = o.num("refAccel", c.refAccel);
       c.highGain = o.boolean("highGain", c.highGain); c.gainHighK = clampd(o.num("gainHighK", c.gainHighK), 1.0, 2.0);
       c.holdAreaM = std::max(0.0, o.num("holdAreaM", c.holdAreaM)); c.holdWarnPct = clampd(o.num("holdWarnPct", c.holdWarnPct), 10, 100); c.holdStopPct = clampd(o.num("holdStopPct", c.holdStopPct), 0, 90);
       c.minPower = o.boolean("minPower", c.minPower); c.minPosDeadM = std::max(0.0, o.num("minPosDeadM", c.minPosDeadM)); c.minHdgDeadDeg = std::max(0.0, o.num("minHdgDeadDeg", c.minHdgDeadDeg));
@@ -127,7 +127,7 @@ inline bool loadConfigText(const std::string& text, AppCfg& cfg, json::Report& r
       o.finish();
     }
     { auto o = R.obj("estimator"); EstimatorCfg& e = cfg.est;
-      e.posTimeoutS = o.num("posTimeoutS", e.posTimeoutS); e.posDropoutS = std::max(e.posTimeoutS, o.num("posDropoutS", e.posDropoutS)); e.deadReckonMaxS = std::max(0.0, o.num("deadReckonMaxS", e.deadReckonMaxS)); e.hdgTimeoutS = o.num("hdgTimeoutS", e.hdgTimeoutS); e.windTimeoutS = o.num("windTimeoutS", e.windTimeoutS);
+      e.posTimeoutS = o.num("posTimeoutS", e.posTimeoutS); e.posDropoutS = std::max(e.posTimeoutS, o.num("posDropoutS", e.posDropoutS)); e.deadReckonMaxS = std::max(0.0, o.num("deadReckonMaxS", e.deadReckonMaxS)); e.hdgTimeoutS = o.num("hdgTimeoutS", e.hdgTimeoutS); e.hdgDeadReckonS = std::max(0.0, o.num("hdgDeadReckonS", e.hdgDeadReckonS)); e.windTimeoutS = o.num("windTimeoutS", e.windTimeoutS);
       e.gateSigma = o.num("gateSigma", e.gateSigma); e.resetAfterRejects = o.integer("resetAfterRejects", e.resetAfterRejects);
       e.gnssDisagreeM = o.num("gnssDisagreeM", e.gnssDisagreeM); e.gyroDisagreeDeg = o.num("gyroDisagreeDeg", e.gyroDisagreeDeg); e.windFilterS = o.num("windFilterS", e.windFilterS);
       { const std::string mm = o.str("medianTest", "off");

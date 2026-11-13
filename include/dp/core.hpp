@@ -94,7 +94,7 @@ public:
         for (int i = 1; i <= c.simSensors.anemometers; ++i) { ChannelCfg ch; ch.id = "WIND" + std::to_string(i); ch.kind = ChannelKind::Wind; sh_->hub->addChannel(ch); }
         for (int i = 1; i <= c.simSensors.mrus; ++i) { ChannelCfg ch; ch.id = "MRU" + std::to_string(i); ch.kind = ChannelKind::Mru; sh_->hub->addChannel(ch); }
         t_ = 0; resetRun();
-        char b[260]; std::snprintf(b, sizeof b, "Имитатор запущен: ветер %.1f м/с с %.0f°, течение %.1f м/с на %.0f°, волна %.1f м; ускорение ×%g. Датчики и движители судна заменены имитацией, выдача команд отключена.",
+        char b[600]; std::snprintf(b, sizeof b, "Имитатор запущен: ветер %.1f м/с с %.0f°, течение %.1f м/с на %.0f°, волна %.1f м; ускорение ×%g. Датчики и движители судна заменены имитацией, выдача команд отключена.",
                                     sb.env.windSpeed, sb.env.windFromDeg, sb.env.currentSpeed, sb.env.currentToDeg, sb.env.hs, sb.speed);
         say(b);
         return true;
