@@ -429,12 +429,39 @@ ApplicationWindow {
             { name: "Подход к объекту", cells: ["План", "Курс", "Режим", "Датчики", "Анализ последствий"] },
             { name: "Свой набор", cells: ["План", "Курс", "Отклонение", "Среда", "Журнал"] } ] }
     }
-    function wsLoad() {
-        try { const w = JSON.parse(core.setting("workspace")); if (w && w.sets && w.sets.length === 3) return w } catch (e) {}
-        return wsDefault()
+    // Наборы хранятся по операторам: заступающий на вахту выбирает себя из списка — экран раскладывается по его наборам.
+    // В настройках пульта: operators = { cur: "<имя>", list: { "<имя>": <наборы> } }; оператор «Общий» есть всегда.
+    function opsLoad() {
+        try {
+            const o = JSON.parse(core.setting("operators"))
+            if (o && o.list && o.list[o.cur]) return o
+        } catch (e) {}
+        let w = wsDefault()
+        try { const old = JSON.parse(core.setting("workspace")); if (old && old.sets && old.sets.length === 3) w = old } catch (e) {}   // наборы прежней версии
+        return { cur: "Общий", list: { "Общий": w } }
     }
-    property var ws: wsLoad()
-    function saveWs(w) { ws = w; core.setSetting("workspace", JSON.stringify(w)) }
+    property var ops: opsLoad()
+    readonly property var opNames: Object.keys(ops.list).sort(function (a, b) { return a === "Общий" ? -1 : b === "Общий" ? 1 : a.localeCompare(b) })
+    readonly property var ws: ops.list[ops.cur] || wsDefault()
+    function saveOps(o) { ops = o; core.setSetting("operators", JSON.stringify(o)) }
+    function saveWs(w) { const o = JSON.parse(JSON.stringify(ops)); o.list[o.cur] = w; saveOps(o) }
+    function setOperator(name) {
+        if (!ops.list[name] || name === ops.cur) return
+        const o = JSON.parse(JSON.stringify(ops)); o.cur = name; saveOps(o)
+        core.note("Вахту принял: " + name + " (рабочее место — наборы оператора)")
+    }
+    function addOperator(name) {
+        name = name.trim()
+        if (name === "" || ops.list[name]) return false
+        const o = JSON.parse(JSON.stringify(ops)); o.list[name] = JSON.parse(JSON.stringify(ws)); o.cur = name; saveOps(o)   // новый — с наборами текущего
+        core.note("Добавлен оператор: " + name + "; вахту принял: " + name)
+        return true
+    }
+    function removeOperator(name) {
+        if (name === "Общий" || !ops.list[name]) return
+        const o = JSON.parse(JSON.stringify(ops)); delete o.list[name]; if (o.cur === name) o.cur = "Общий"; saveOps(o)
+        core.note("Удалён оператор: " + name)
+    }
     Component { id: cPlan; PlanCard {} }
     Component { id: cCourse; CourseCard {} }
     Component { id: cDev; DevCard {} }
@@ -478,7 +505,8 @@ ApplicationWindow {
             Panel {
                 Layout.preferredWidth: 270; Layout.fillHeight: true
                 ColumnLayout {
-                    anchors.fill: parent; anchors.margins: 10; spacing: 6
+                    anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; anchors.topMargin: 6; anchors.bottomMargin: 6; spacing: 3
+                    Label { text: "Вахта: " + win.ops.cur; color: Theme.accent; font.pixelSize: 13; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
                     Label { text: s.shipName || "судно не загружено"; color: s.shipName ? Theme.text : Theme.dim; font.pixelSize: 16; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
                     RowLayout {
                         spacing: 8
@@ -598,11 +626,22 @@ ApplicationWindow {
                     RowLayout {
                         anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 10; spacing: 10
                         Label { text: win.wsEdit ? "НАСТРОЙКА РАБОЧЕГО МЕСТА" : "РАБОЧЕЕ МЕСТО"; color: win.wsEdit ? Theme.accent : Theme.dim; font.bold: true; font.pixelSize: 14 }
-                        Label { text: win.wsEdit ? "Выберите панель в каждой ячейке. Удержание продолжается, команды не меняются." : "Шапка, тревоги и режим закреплены во всех наборах."
+                        Label { text: win.wsEdit ? "Удержание продолжается." : "Заступающий на вахту выбирает себя в списке. Шапка, тревоги и режим закреплены всегда."
                                 color: Theme.text; font.pixelSize: 14; Layout.fillWidth: true; elide: Text.ElideRight }
+                        Label { text: "Оператор"; color: Theme.dim; font.pixelSize: 14 }
+                        ComboBox {
+                            id: opSel; implicitWidth: 220; implicitHeight: 38; font.pixelSize: 14
+                            model: win.opNames
+                            currentIndex: win.opNames.indexOf(win.ops.cur)
+                            onActivated: win.setOperator(win.opNames[currentIndex])
+                        }
+                        TextField { id: opName; visible: win.wsEdit; implicitWidth: 180; implicitHeight: 38; font.pixelSize: 14; placeholderText: "фамилия оператора"
+                                    onAccepted: if (win.addOperator(text)) text = "" }
+                        Btn { text: "Добавить"; visible: win.wsEdit; implicitHeight: 38; enabled: opName.text.trim() !== ""; onClicked: if (win.addOperator(opName.text)) opName.text = "" }
+                        Btn { text: "Удалить «" + win.ops.cur + "»"; visible: win.wsEdit && win.ops.cur !== "Общий"; implicitHeight: 38; onClicked: win.removeOperator(win.ops.cur) }
                         Label { text: "Набор"; color: Theme.dim; font.pixelSize: 14 }
                         ComboBox {
-                            id: wsSet; implicitWidth: 280; implicitHeight: 38; font.pixelSize: 14
+                            id: wsSet; implicitWidth: 250; implicitHeight: 38; font.pixelSize: 14
                             model: win.ws.sets.map(function (x) { return x.name })
                             currentIndex: win.ws.cur
                             onActivated: { const w = JSON.parse(JSON.stringify(win.ws)); w.cur = currentIndex; win.saveWs(w) }

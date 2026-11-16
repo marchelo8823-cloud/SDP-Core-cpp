@@ -57,6 +57,7 @@ void HmiCore::runFor(double seconds) {
 
 QString HmiCore::setting(const QString& key) const { return QSettings("SDP", "sdp_hmi").value(key).toString(); }
 void HmiCore::setSetting(const QString& key, const QString& value) { QSettings q("SDP", "sdp_hmi"); q.setValue(key, value); }
+void HmiCore::note(const QString& text) { say(text.toStdString()); }
 
 void HmiCore::sample(double load) {
     loadHist_.push_back(load); while (loadHist_.size() > 150) loadHist_.pop_front();

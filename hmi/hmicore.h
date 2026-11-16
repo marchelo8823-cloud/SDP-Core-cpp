@@ -38,6 +38,7 @@ public:
     Q_INVOKABLE void ack();                                       // квитирование тревог (снимает мигание новых)
     Q_INVOKABLE QString setting(const QString& key) const;        // настройки пульта (рабочие места): хранятся в QSettings
     Q_INVOKABLE void setSetting(const QString& key, const QString& value);
+    Q_INVOKABLE void note(const QString& text);                   // запись оператора в журнал событий (смена вахты)
     void runFor(double seconds);                                  // прогнать ядро без реального времени (для проверок и снимков)
     void setPaused(bool p) { paused_ = p; }
 
