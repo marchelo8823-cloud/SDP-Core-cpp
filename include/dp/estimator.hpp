@@ -73,6 +73,7 @@ struct PosRefCfg {
 
 struct EstimatorCfg {
     double posTimeoutS = 4.0;
+    double biasRecoverS = 60.0, biasRecoverGain = 8.0;   // после возврата измерений: столько секунд шум процесса неизвестной силы × столько (0 с — выкл.)
     double posDropoutS = 20.0;        // «Position dropout» (K-Pos): столько секунд без принятых измерений положения
     double deadReckonMaxS = 0.0;      // 0 — счисление без ограничения по времени (как в K-Pos); иначе после этого времени положение считается потерянным ⚠
     double hdgTimeoutS = 2.0;
@@ -170,8 +171,14 @@ public:
         const double cp = std::cos(psi), sp = std::sin(psi);
         const double Fx = thrustBody.X + windBody.X, Fy = thrustBody.Y + windBody.Y;
         const double Fn = Fx * cp - Fy * sp, Fe = Fx * sp + Fy * cp;
+        // После долгой потери положения неизвестная сила (течение, порывы) успела измениться, а её оценка за время счисления — нет.
+        // Поэтому recoverS секунд после возврата измерений шум процесса силы увеличен в recoverGain раз: оценка сходится быстрее,
+        // и судно не разгоняет неучтённая сила (задача №17).
+        const double qb0 = kn_.qb;
+        if (recoverT_ > 0) { kn_.qb = ke_.qb = qb0 * ec_.biasRecoverGain; recoverT_ -= dt; }
         kn_.predict(dt, Fn, mEff_, dEff_);
         ke_.predict(dt, Fe, mEff_, dEff_);
+        kn_.qb = ke_.qb = qb0;
         updatePosition(time, fr, psi);
         // курс: предсказание
         const double Nmom = thrustBody.N + windBody.N;
@@ -379,7 +386,9 @@ private:
         // потеря опорных систем: положение не уточнялось дольше posTimeoutS — держимся по модели (счисление)
         s_.refLostS = kn_.inited ? std::max(0.0, time - lastAccT_) : 0.0;
         s_.refLost = kn_.inited && s_.refLostS > ec_.posTimeoutS;
+        const bool wasDrop = s_.posDropout;
         s_.posDropout = kn_.inited && s_.refLostS >= ec_.posDropoutS;
+        if (wasDrop && !s_.refLost) recoverT_ = ec_.biasRecoverS;   // измерения вернулись после Position dropout
         if (kn_.inited && ec_.deadReckonMaxS > 0 && s_.refLostS > ec_.deadReckonMaxS) s_.posValid = false;
         { const double q = s_.refLost ? s_.refLostS / 300.0 : 0.0; s_.drDriftM = ec_.drDrift5MinM * q * q; }
         // события для оператора: сохраняются, пока последнее измерение системы не прошло проверку
@@ -543,6 +552,7 @@ private:
     Inertia in_;
     double mEff_ = 1, dEff_ = 0;
     Kf3 kn_, ke_, kpsi_;
+    double recoverT_ = 0;   // осталось секунд ускоренного схождения оценки силы после потери положения
     EstimatorState s_;
     std::map<std::string, PosSeen> posSeen_;
     std::map<std::string, HdgSeen> hdgSeen_;
