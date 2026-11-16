@@ -29,6 +29,23 @@ ApplicationWindow {
     component Caption: Label { color: Theme.dim; font.pixelSize: Theme.fsSmall; font.capitalization: Font.AllUppercase; font.letterSpacing: 1 }
     component Big: Label { color: Theme.text; font.pixelSize: Theme.fsBig; font.family: Theme.mono }
     component Btn: Button { font.pixelSize: Theme.fs; implicitHeight: 40 }
+    // Кнопка с подтверждением (РС ч. XV 8.5.7, MSC.1/Circ.1580 3.4.1.4: одно случайное нажатие не должно приводить к потере
+    // положения; как двойное нажатие в K-Pos и Mega-Guard): первое нажатие — кнопка мигает «ещё раз», второе в течение 3 с — команда.
+    property string armedCmd: ""
+    Timer { id: armT; interval: 3000; onTriggered: win.armedCmd = "" }
+    Timer { id: blinkT; interval: 400; repeat: true; running: win.armedCmd !== ""; property bool on: false; onTriggered: on = !on; onRunningChanged: on = true }
+    component ConfirmBtn: Btn {
+        property string cmd
+        property string label
+        readonly property bool armed: win.armedCmd === cmd
+        text: armed ? "Ещё раз: " + label : label
+        Rectangle { anchors.fill: parent; radius: 3; color: Theme.warn; opacity: parent.armed && blinkT.on ? 0.45 : 0; z: 1 }
+        onClicked: {
+            if (armed) { win.armedCmd = ""; armT.stop(); core.command(cmd) }
+            else { win.armedCmd = cmd; armT.restart() }
+        }
+    }
+    readonly property bool posLossOrReturn: { for (let i = 0; i < core.alarms.length; ++i) { const c = core.alarms[i].code; if (c === "POS_DROPOUT" || c === "POS_ALL_REJ" || c === "POS_RETURN") return true } return false }
 
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 8; spacing: 8
@@ -85,23 +102,25 @@ ApplicationWindow {
                     }
                 }
                 Panel {
-                    Layout.fillWidth: true; Layout.preferredHeight: 196
+                    Layout.fillWidth: true; Layout.preferredHeight: win.posLossOrReturn ? 244 : 196
                     ColumnLayout {
                         anchors.fill: parent; anchors.margins: 12; spacing: 8
                         Caption { text: "Режим" }
                         RowLayout {
                             spacing: 8
-                            Btn { text: "Ожидание"; highlighted: s.modeCode === 0; onClicked: core.command("standby"); Layout.fillWidth: true }
-                            Btn { text: "Курс"; highlighted: s.modeCode === 3; enabled: s.stateCode >= 2; onClicked: core.command("heading"); Layout.fillWidth: true }
-                            Btn { text: "Позиция"; highlighted: s.modeCode === 4; enabled: s.stateCode >= 2; onClicked: core.command("position"); Layout.fillWidth: true }
+                            ConfirmBtn { label: "Ожидание"; cmd: "standby"; highlighted: s.modeCode === 0; Layout.fillWidth: true }
+                            ConfirmBtn { label: "Курс"; cmd: "heading"; highlighted: s.modeCode === 3; enabled: s.stateCode >= 2; Layout.fillWidth: true }
+                            ConfirmBtn { label: "Позиция"; cmd: "position"; highlighted: s.modeCode === 4; enabled: s.stateCode >= 2; Layout.fillWidth: true }
                         }
                         RowLayout {
                             spacing: 8
                             Btn { text: "Взять все движители"; enabled: s.hasShip === true; onClicked: core.command("thr_take all"); Layout.fillWidth: true }
-                            Btn { text: "Снять все"; enabled: s.hasShip === true; onClicked: core.command("thr_release all"); Layout.fillWidth: true }
+                            ConfirmBtn { label: "Снять все"; cmd: "thr_release all"; enabled: s.hasShip === true; Layout.fillWidth: true }
                         }
+                        Btn { text: "Держать здесь (не возвращаться в точку)"; visible: s.modeCode === 4 && win.posLossOrReturn; Layout.fillWidth: true
+                              palette.button: Theme.warn; palette.buttonText: "#1a1a1a"; font.bold: true; onClicked: core.command("here") }
                         Label { color: Theme.dim; font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true
-                                text: s.stateCode === 0 ? "Загрузите судно." : s.stateCode === 1 ? "Ядро ждёт курс и положение от датчиков." : s.stateCode === 2 ? "Возьмите движители и включите режим." : "Режим включён: изменения точки и курса — ниже." }
+                                text: win.armedCmd !== "" ? "Нажмите ту же кнопку ещё раз в течение 3 с, чтобы подтвердить." : s.stateCode === 0 ? "Загрузите судно." : s.stateCode === 1 ? "Ядро ждёт курс и положение от датчиков." : s.stateCode === 2 ? "Возьмите движители и включите режим." : "Режим включён: изменения точки и курса — ниже." }
                     }
                 }
                 Panel {

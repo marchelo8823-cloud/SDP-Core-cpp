@@ -12,4 +12,21 @@ if(NOT WIN32)
            --run 20 --cmd "thr_take all" --cmd position --run 120 --screenshot ${CMAKE_BINARY_DIR}/hmi_smoke.png
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
   set_tests_properties(hmi_smoke PROPERTIES TIMEOUT 120)
+  # подтверждение смены режима (РС ч. XV 8.5.7): одно нажатие «Ожидание» режим не снимает, второе подряд — снимает
+  foreach(n 1 2)
+    set(pr "")
+    foreach(i RANGE 1 ${n})
+      list(APPEND pr --press "Ожидание")
+    endforeach()
+    if(n EQUAL 1)
+      set(em 4)
+    else()
+      set(em 0)
+    endif()
+    add_test(NAME hmi_confirm_${n} COMMAND ${CMAKE_COMMAND} -E env QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
+             $<TARGET_FILE:sdp_hmi> --ship ${CMAKE_SOURCE_DIR}/data/Данные_судна_пример.xlsx --sim ${CMAKE_SOURCE_DIR}/tests/scenarios/имитатор_быстро.xlsx
+             --run 20 --cmd "thr_take all" --cmd position --run 30 ${pr} --expect-mode ${em}
+             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+    set_tests_properties(hmi_confirm_${n} PROPERTIES TIMEOUT 120)
+  endforeach()
 endif()
