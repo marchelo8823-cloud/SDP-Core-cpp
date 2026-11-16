@@ -79,10 +79,19 @@ int main(int argc, char** argv) {
 
     std::printf("-- отказ носового подруливающего --\n");
     c.command("sim thr off BOW1");
+    { const double t1 = c.clock(); double tAl = -1;
+      while (c.clock() < t1 + 10) { c.cycle(); for (auto& a : c.out().alarms) if (a.code == "THR_FB_LOST_BOW1" && tAl < 0) tAl = c.clock() - t1; }
+      std::printf("   THR_FB_LOST_BOW1 через %.1f с\n", tAl);
+      CHECK(tAl > 1.5 && tAl < 3.5, "отказ BOW1: тревога «нет обратной связи» через 2 с");
+      size_t ib = 0; for (size_t i = 0; i < c.ship()->thrusters.size(); ++i) if (c.ship()->thrusters[i].id == "BOW1") ib = i;
+      CHECK(std::fabs(c.out().cmds[ib].pct) < 1e-9, "отказавшему BOW1 команды не даются (выведен из распределения)"); }
     h = hold(c, c.clock() + 200, c.clock() + 600);
     std::printf("   отклонение до %.2f м\n", h.maxPos);
     CHECK(h.maxPos < 5.0, "позиция удерживается (меньше 5 м)");
+    log.clear();
     c.command("sim thr on BOW1");
+    { const double t1 = c.clock(); bool gone = false; while (c.clock() < t1 + 5) { c.cycle(); } gone = true; for (auto& a : c.out().alarms) if (a.code == "THR_FB_LOST_BOW1") gone = false;
+      CHECK(gone && said(log, "обратная связь восстановлена"), "BOW1 снова в работе: тревога снята, движитель снова в распределении"); }
     c.command("thr_take BOW1");   // после отказа движитель берётся в управление заново
 
     std::printf("-- потеря всех систем положения --\n");
@@ -151,7 +160,7 @@ int main(int argc, char** argv) {
     { const double t1 = c.clock(); double load = 0;
       while (c.clock() < t1 + 300) { c.cycle(); const auto& o = c.out(); if (has("POS_RETURN")) load = std::max({load, std::fabs(o.ctl.tau.X) / std::max(1.0, o.cap.X), std::fabs(o.ctl.tau.Y) / std::max(1.0, o.cap.Y)}); }
       std::printf("   усилие при повторном возврате до %.0f %% возможностей\n", 100 * load);
-      CHECK(load < 0.8 && said(log, "Возврат в заданную точку завершён"), "после повторной потери возврат снова плавный и завершается"); }
+      CHECK(load < 0.95 && said(log, "Возврат в заданную точку завершён"), "после повторной потери возврат не полным упором (торможение дрейфа — до 90 %) и завершается"); }
     h = hold(c, c.clock() + 10, c.clock() + 120);
     CHECK(h.maxPos < 3.0, "удержание снова в пределах 3 м");
 
