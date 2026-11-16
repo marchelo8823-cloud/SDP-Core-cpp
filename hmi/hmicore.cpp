@@ -84,6 +84,18 @@ void HmiCore::refresh() {
     m["roll"] = rad2deg(es.roll); m["pitch"] = rad2deg(es.pitch); m["heave"] = es.heave;
     m["waveHs"] = es.wave.valid ? es.wave.hs : -1.0;
     if (core_.simRunning()) { auto* sim = core_.sim(); const auto& tr = sim->truth(); m["trueN"] = tr.n; m["trueE"] = tr.e; }
+    // анализ последствий отказа: класс, был ли расчёт, запас по группам наихудшего отказа
+    if (DpEngine* eng = core_.engine()) {
+        const Consequence& ca = eng->consequence();
+        m["caClass"] = ca.dpClass(); m["caRan"] = ca.ran(); m["caAge"] = ca.ran() ? core_.clock() - ca.lastRunT() : -1.0; m["caSingle"] = ca.singleFailures();
+        QVariantList gl; bool bad = false;
+        for (const auto& g : ca.groups()) {
+            QVariantMap x; x["name"] = QString::fromStdString(g.name); x["ids"] = QString::fromStdString(Consequence::join(g.ids));
+            x["force"] = g.forcePct; x["moment"] = g.momentPct; x["holds"] = g.holds; x["alarm"] = g.alarm; bad = bad || g.alarm;
+            gl.push_back(x);
+        }
+        m["caGroups"] = gl; m["caAlarm"] = bad;
+    } else { m["caClass"] = 0; m["caRan"] = false; m["caGroups"] = QVariantList(); m["caAlarm"] = false; }
     s_ = m;
 
     QVariantList th;

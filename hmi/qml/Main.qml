@@ -179,7 +179,35 @@ ApplicationWindow {
                     }
                 }
                 Panel {
-                    Layout.fillWidth: true; Layout.preferredHeight: 250
+                    Layout.fillWidth: true; Layout.preferredHeight: 190
+                    ColumnLayout {
+                        anchors.fill: parent; anchors.margins: 10; spacing: 4
+                        Caption { text: "Анализ последствий отказа" }
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: 6
+                            Btn { text: "Класс 2"; implicitHeight: 28; Layout.fillWidth: true; highlighted: s.caClass === 2; enabled: s.hasShip === true; onClicked: core.command("class 2") }
+                            Btn { text: "Класс 3"; implicitHeight: 28; Layout.fillWidth: true; highlighted: s.caClass === 3; enabled: s.hasShip === true; onClicked: core.command("class 3") }
+                            Btn { text: "Выкл"; implicitHeight: 28; Layout.fillWidth: true; highlighted: s.caClass === 0; enabled: s.hasShip === true; onClicked: core.command("class off") }
+                        }
+                        Label { Layout.fillWidth: true; wrapMode: Text.Wrap; font.pixelSize: Theme.fsSmall
+                                color: s.caClass === 0 ? Theme.dim : s.caAlarm ? Theme.alarm : s.caRan ? Theme.ok : Theme.dim
+                                text: s.caClass === 0 ? "Выключен. Для DYNPOS-2/3 включите класс (РС ч. XV 8.9.5)."
+                                    : !s.caRan ? "Класс " + s.caClass + ": расчёт через 60 с в режиме «Позиция» при неизменных точке и курсе."
+                                    : (s.caAlarm ? "НЕ ХВАТИТ упора при наихудшем отказе" : "Запас есть при всех отказах") + " (" + Theme.num(s.caAge, 0) + " с назад). Сила / момент, которые наберутся:"
+                                      + (s.caSingle ? " · группы не заданы — одиночные отказы" : "") }
+                        Repeater {
+                            model: s.caGroups
+                            delegate: RowLayout {
+                                Layout.fillWidth: true; spacing: 8
+                                Rectangle { implicitWidth: 10; implicitHeight: 10; radius: 5; color: modelData.alarm ? Theme.alarm : modelData.holds ? Theme.ok : Theme.warn }
+                                Label { text: "отказ " + modelData.name + " (" + modelData.ids + ")"; color: Theme.text; Layout.fillWidth: true; font.pixelSize: Theme.fsSmall; elide: Text.ElideRight }
+                                Label { text: Theme.num(modelData.force, 0) + " / " + Theme.num(modelData.moment, 0) + " %"; color: modelData.holds ? Theme.text : Theme.alarm; font.pixelSize: Theme.fsSmall; font.family: Theme.mono }
+                            }
+                        }
+                    }
+                }
+                Panel {
+                    Layout.fillWidth: true; Layout.preferredHeight: 190
                     ColumnLayout {
                         anchors.fill: parent; anchors.margins: 10; spacing: 4
                         Caption { text: "Датчики" }
