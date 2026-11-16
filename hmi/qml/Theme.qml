@@ -17,7 +17,8 @@ QtObject {
     readonly property color info: "#8fa7bd"
     readonly property color fb: "#e8e8e8"          // факт (обратная связь)
     readonly property color wind: "#c9a6f2"
-    readonly property color dist: "#f29e6b"        // внешнее возмущение
+    readonly property color dist: "#4fd1c5"        // внешнее возмущение (бирюзовый: оранжевый путался с предупреждением)
+    readonly property color grid: "#29323b"        // кольца и сетка плана — тише линий рамок
     readonly property string font: "DejaVu Sans"
     readonly property string mono: "DejaVu Sans Mono"
     readonly property int fs: 15
@@ -30,6 +31,17 @@ QtObject {
     }
     function deg(v) { return num(v, 1) + "°" }
     function knots(ms) { return ms * 1.943844 }
+    // шрифт для Canvas: родовые имена — если «DejaVu Sans» не установлен (Mac), холст не падает в мелкий запасной шрифт
+    function cfont(px, bold, mono) { return (bold ? "bold " : "") + px + "px " + (mono ? "monospace" : "sans-serif") }
+    function hdg3(v) {             // курс по-морскому, три цифры: 008,5°
+        if (v === undefined || v === null || isNaN(v)) return "—"
+        const s = num(((v % 360) + 360) % 360, 1)
+        return ("00" + s).slice(-5) + "°"
+    }
+    function bearing(v) {          // направление целыми градусами: 065°
+        if (v === undefined || v === null || isNaN(v)) return "—"
+        return ("00" + Math.round(((v % 360) + 360) % 360) % 360).slice(-3) + "°"
+    }
     function stateColor(code) { return code === 3 ? ok : code === 2 ? accent : code === 1 ? warn : dim }
     function levelColor(l) { return l === 1 ? alarm : l === 2 ? warn : info }
 }

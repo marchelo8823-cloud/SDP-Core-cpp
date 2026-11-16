@@ -1,5 +1,7 @@
-// План положения: север вверх, в центре — заданная точка. Судно по оценке ядра, след, точка и курс задания,
-// движители с векторами упора, ветер и внешнее возмущение у края. Масштаб — радиус внешнего кольца.
+// План положения: север вверх, в центре — заданная точка. Судно по оценке ядра, след, движители с векторами упора.
+// Правило слоёв: графика (кольца, картушка, судно) — нижний слой и приглушена; цифры — в окнах по углам панели,
+// на картушке только значки: курс (заливка) и курс задания (контур) на ободе, ветер и возмущение — стрелки на ободе.
+// Подписи колец — на одном диагональном луче, свободном от курса, ветра и возмущения, на подложке.
 import QtQuick
 import QtQuick.Controls
 import "."
@@ -13,6 +15,13 @@ Rectangle {
     property var track: []
     property real range: 50          // м — радиус внешнего кольца
     property bool followVessel: false
+    property bool showLegend: false
+
+    readonly property real windFromTrue: (((s.windFromRel || 0) + (s.hdg || 0)) % 360 + 360) % 360
+    readonly property real distKN: Math.sqrt((s.distN || 0) * (s.distN || 0) + (s.distE || 0) * (s.distE || 0)) / 1000
+    readonly property real distTo: (Math.atan2(s.distE || 0, s.distN || 0) * 180 / Math.PI + 360) % 360
+    readonly property real sogKn: Theme.knots(Math.sqrt((s.u || 0) * (s.u || 0) + (s.v || 0) * (s.v || 0)))
+    readonly property color hdgColor: !s.hdgValid ? Theme.alarm : s.hdgDR ? Theme.warn : Theme.text
 
     Canvas {
         id: cv
@@ -25,63 +34,92 @@ Rectangle {
             g.fillStyle = Theme.panel; g.fillRect(0, 0, W, H)
             const s = root.s
             if (!s.hasShip) {
-                g.fillStyle = Theme.dim; g.font = "20px '" + Theme.font + "'"; g.textAlign = "center"
+                g.fillStyle = Theme.dim; g.font = Theme.cfont(20); g.textAlign = "center"
                 g.fillText("Судно не загружено — «Открыть судно…»", W / 2, H / 2)
                 return
             }
-            const R = Math.min(W, H) / 2 - 34
-            const k = R / root.range                 // пикселей на метр
             const cx = W / 2, cy = H / 2
+            // радиус: картушка с подписями градусов не должна заходить под окна в углах
+            const LBL = 42                                   // запас на подписи градусов снаружи кольца
+            let R = Math.min(W, H) / 2 - 44
+            const boxes = [hdgBox, envBox, spdBox, scaleBox]
+            for (let i = 0; i < boxes.length; ++i) {
+                const b = boxes[i]
+                if (!b.visible) continue
+                const bx = b.x - cv.x, by = b.y - cv.y
+                const nx = Math.max(bx, Math.min(cx, bx + b.width)), ny = Math.max(by, Math.min(cy, by + b.height))
+                R = Math.min(R, Math.hypot(nx - cx, ny - cy) - LBL)
+            }
+            R = Math.max(R, 80)
+            const k = R / root.range                 // пикселей на метр
             const c0n = root.followVessel ? s.n : s.refN, c0e = root.followVessel ? s.e : s.refE
             const X = function (e) { return cx + (e - c0e) * k }
             const Y = function (n) { return cy - (n - c0n) * k }
-            // кольца дальности
-            g.strokeStyle = Theme.line; g.lineWidth = 1; g.fillStyle = Theme.dim; g.font = "13px '" + Theme.font + "'"; g.textAlign = "left"
-            for (let i = 1; i <= 4; ++i) {
-                const r = R * i / 4
-                g.beginPath(); g.arc(cx, cy, r, 0, 2 * Math.PI); g.stroke()
-                g.fillText(Theme.num(root.range * i / 4, root.range >= 40 ? 0 : 1) + " м", cx + r * 0.707 + 3, cy - r * 0.707 - 3)
+            const pol = function (r, deg) { const a = deg * Math.PI / 180; return [cx + Math.sin(a) * r, cy - Math.cos(a) * r] }
+            const angd = function (a, b) { return Math.abs(((a - b) % 360 + 540) % 360 - 180) }
+            const halo = function (txt, x, y) {          // текст на подложке цвета панели: не сливается с линиями
+                g.lineWidth = 5; g.lineJoin = "round"; g.strokeStyle = Theme.panel; g.strokeText(txt, x, y); g.fillText(txt, x, y)
             }
+
+            // ── нижний слой: кольца, сетка, картушка ──
+            g.strokeStyle = Theme.grid; g.lineWidth = 1
+            for (let i = 1; i <= 4; ++i) { g.beginPath(); g.arc(cx, cy, R * i / 4, 0, 2 * Math.PI); g.stroke() }
             g.beginPath(); g.moveTo(cx - R, cy); g.lineTo(cx + R, cy); g.moveTo(cx, cy - R); g.lineTo(cx, cy + R); g.stroke()
-            // север
-            g.fillStyle = Theme.text; g.font = "bold 16px '" + Theme.font + "'"; g.textAlign = "center"
-            g.fillText("С", cx, cy - R - 12)
+            g.strokeStyle = Theme.line; g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, R, 0, 2 * Math.PI); g.stroke()
+            for (let b = 0; b < 360; b += 5) {
+                const len = b % 30 === 0 ? 14 : b % 10 === 0 ? 9 : 5
+                const p1 = pol(R, b), p2 = pol(R - len, b)
+                g.strokeStyle = b % 30 === 0 ? Theme.dim : Theme.line; g.lineWidth = b % 30 === 0 ? 2 : 1
+                g.beginPath(); g.moveTo(p1[0], p1[1]); g.lineTo(p2[0], p2[1]); g.stroke()
+            }
+            g.textAlign = "center"; g.textBaseline = "middle"
+            for (let b = 0; b < 360; b += 30) {
+                const p = pol(R + 28, b), main = b % 90 === 0
+                g.fillStyle = main ? Theme.text : Theme.dim
+                g.font = main ? Theme.cfont(20, true) : Theme.cfont(14, false, true)
+                g.fillText(b === 0 ? "С" : b === 90 ? "В" : b === 180 ? "Ю" : b === 270 ? "З" : ("00" + b).slice(-3), p[0], p[1])
+            }
+            g.textBaseline = "alphabetic"
+
             // след
             const t = root.track
             if (t.length >= 4) {
-                g.strokeStyle = Qt.rgba(0.49, 0.76, 0.93, 0.45); g.lineWidth = 1.5; g.beginPath()
+                g.strokeStyle = Qt.rgba(0.36, 0.78, 1.0, 0.35); g.lineWidth = 1.5; g.beginPath()
                 g.moveTo(X(t[1]), Y(t[0]))
                 for (let i = 2; i + 1 < t.length; i += 2) g.lineTo(X(t[i + 1]), Y(t[i]))
                 g.stroke()
             }
-            // заданная точка и курс задания
-            const rx = X(s.refE), ry = Y(s.refN)
-            g.strokeStyle = Theme.accent; g.lineWidth = 2
-            g.beginPath(); g.moveTo(rx - 12, ry); g.lineTo(rx + 12, ry); g.moveTo(rx, ry - 12); g.lineTo(rx, ry + 12); g.stroke()
-            g.beginPath(); g.arc(rx, ry, 6, 0, 2 * Math.PI); g.stroke()
-            const rh = s.refHdg * Math.PI / 180
-            g.setLineDash([6, 5]); g.beginPath(); g.moveTo(rx, ry); g.lineTo(rx + Math.sin(rh) * R * 0.35, ry - Math.cos(rh) * R * 0.35); g.stroke(); g.setLineDash([])
-            // судно
+
+            // ── судно ──
+            const known = !!s.hdgValid
             const L = hull.length || 60, B = hull.beam || 14
             const h = s.hdg * Math.PI / 180, ch = Math.cos(h), sh = Math.sin(h)
-            const P = function (x, y) { return [X(s.e + x * sh + y * ch), Y(s.n + x * ch - y * sh)] }   // x — к носу, y — на правый борт
+            const Pt = function (x, y) {               // x — к носу, y — на правый борт
+                const n = s.n + x * ch - y * sh, e = s.e + x * sh + y * ch
+                return [X(e), Y(n)]
+            }
+            const col = !known ? Theme.dim : (s.hdgDR || s.posDR) ? Theme.warn : !s.posValid ? Theme.alarm : Theme.vessel
             const shape = [[L / 2, 0], [L / 2 - B * 0.9, B / 2], [-L / 2, B / 2], [-L / 2, -B / 2], [L / 2 - B * 0.9, -B / 2]]
+            // курсовая черта от носа до кольца — под корпусом и подписями
+            if (known) {
+                const bow = Pt(L / 2, 0), far = pol(R - 16, s.hdg)
+                g.strokeStyle = col; g.lineWidth = 1.5; g.setLineDash([6, 6])
+                g.beginPath(); g.moveTo(bow[0], bow[1]); g.lineTo(far[0], far[1]); g.stroke(); g.setLineDash([])
+            }
+            const hullPts = shape.map(function (q) { return Pt(q[0], q[1]) })
             g.beginPath()
-            for (let i = 0; i < shape.length; ++i) { const p = P(shape[i][0], shape[i][1]); if (i === 0) g.moveTo(p[0], p[1]); else g.lineTo(p[0], p[1]) }
+            for (let i = 0; i < hullPts.length; ++i) { const p = hullPts[i]; if (i === 0) g.moveTo(p[0], p[1]); else g.lineTo(p[0], p[1]) }
             g.closePath()
-            g.fillStyle = s.posValid ? Qt.rgba(0.49, 0.76, 0.93, 0.22) : Qt.rgba(0.9, 0.33, 0.29, 0.25)
-            g.fill(); g.strokeStyle = s.posDR ? Theme.warn : Theme.vessel; g.lineWidth = 2; g.stroke()
-            // курсовая черта
-            const bow = P(L / 2, 0), far = P(L / 2 + L * 0.6, 0)
-            g.strokeStyle = Theme.vessel; g.lineWidth = 1.5; g.beginPath(); g.moveTo(bow[0], bow[1]); g.lineTo(far[0], far[1]); g.stroke()
+            g.fillStyle = Qt.rgba(col.r, col.g, col.b, known ? 0.14 : 0.05); g.fill()
+            g.strokeStyle = col; g.lineWidth = 2; if (!known) g.setLineDash([7, 6]); g.stroke(); g.setLineDash([])
             // движители: вектор упора (факт), длина ∝ доле упора
             const th = root.thrusters
             for (let i = 0; i < th.length; ++i) {
-                const q = th[i], p = P(q.x, q.y)
+                const q = th[i], p = Pt(q.x, q.y)
                 g.fillStyle = q.failed ? Theme.alarm : q.taken ? Theme.ok : Theme.dim
                 g.beginPath(); g.arc(p[0], p[1], 4, 0, 2 * Math.PI); g.fill()
                 const pct = q.fb ? q.fbPct : q.cmdPct
-                if (Math.abs(pct) > 1) {
+                if (known && Math.abs(pct) > 1) {
                     const a = (q.azimuth ? q.fbAng : 90) * Math.PI / 180 + h   // направление силы на судно
                     const len = Math.min(1, Math.abs(pct) / 100) * 46 * (pct < 0 ? -1 : 1)   // пикселей: до 46 при 100 %
                     g.strokeStyle = Theme.fb; g.lineWidth = 2; g.beginPath(); g.moveTo(p[0], p[1])
@@ -93,49 +131,191 @@ Rectangle {
                 g.strokeStyle = Theme.dim; g.lineWidth = 1; const tx = X(s.trueE), ty = Y(s.trueN)
                 g.beginPath(); g.moveTo(tx - 5, ty - 5); g.lineTo(tx + 5, ty + 5); g.moveTo(tx - 5, ty + 5); g.lineTo(tx + 5, ty - 5); g.stroke()
             }
-            // ветер (откуда, относительно носа → истинное) и внешнее возмущение (куда) — стрелки у края
-            const arrow = function (angRad, col, label, inward) {
-                const ex = cx + Math.sin(angRad) * (R + 18), ey = cy - Math.cos(angRad) * (R + 18)
-                const ix = cx + Math.sin(angRad) * (R - 22), iy = cy - Math.cos(angRad) * (R - 22)
-                const fx = inward ? ex : ix, fy = inward ? ey : iy, tx2 = inward ? ix : ex, ty2 = inward ? iy : ey
-                g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 3
-                g.beginPath(); g.moveTo(fx, fy); g.lineTo(tx2, ty2); g.stroke()
-                const a2 = Math.atan2(ty2 - fy, tx2 - fx)
-                g.beginPath(); g.moveTo(tx2, ty2); g.lineTo(tx2 - 12 * Math.cos(a2 - 0.4), ty2 - 12 * Math.sin(a2 - 0.4)); g.lineTo(tx2 - 12 * Math.cos(a2 + 0.4), ty2 - 12 * Math.sin(a2 + 0.4)); g.closePath(); g.fill()
-                g.font = "13px '" + Theme.font + "'"; g.textAlign = "center"; g.fillText(label, ex + Math.sin(angRad) * 12, ey - Math.cos(angRad) * 12)
+            // заданная точка — поверх судна
+            const rx = X(s.refE), ry = Y(s.refN)
+            g.strokeStyle = Theme.accent; g.lineWidth = 2.5
+            g.beginPath(); g.moveTo(rx - 12, ry); g.lineTo(rx + 12, ry); g.moveTo(rx, ry - 12); g.lineTo(rx, ry + 12); g.stroke()
+            g.beginPath(); g.arc(rx, ry, 6, 0, 2 * Math.PI); g.stroke()
+
+            // подписи колец — верхний слой: на диагонали, дальней от курса, ветра и возмущения; под корпусом пропускаются
+            const avoid = [s.hdg, s.hdg + 180]
+            if (s.windValid) avoid.push(root.windFromTrue)
+            if (root.distKN > 2) avoid.push(root.distTo)
+            let ray = 225, best = -1
+            const rays = [45, 135, 225, 315]
+            for (let i = 0; i < rays.length; ++i) {
+                let m = 360
+                for (let j = 0; j < avoid.length; ++j) m = Math.min(m, angd(rays[i], avoid[j]))
+                if (m > best) { best = m; ray = rays[i] }
             }
-            if (s.windValid) arrow((s.windFromRel + s.hdg) * Math.PI / 180, Theme.wind, "ветер", true)
-            const dmag = Math.sqrt(s.distN * s.distN + s.distE * s.distE)
-            if (dmag > 2000) arrow(Math.atan2(s.distE, s.distN), Theme.dist, "возмущение", false)
+            g.fillStyle = Theme.dim; g.font = Theme.cfont(14, false, true)
+            const inHull = function (x, y) {          // точка внутри контура судна на экране
+                let c = false
+                for (let i = 0, j = hullPts.length - 1; i < hullPts.length; j = i++) {
+                    const a = hullPts[i], b = hullPts[j]
+                    if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c
+                }
+                return c
+            }
+            g.textAlign = "center"; g.textBaseline = "middle"
+            for (let i = 1; i <= 4; ++i) {
+                const p = pol(R * i / 4, ray)
+                if (inHull(p[0], p[1]) || inHull(p[0] - 30, p[1]) || inHull(p[0] + 30, p[1])) continue   // под корпусом не подписываем
+                const rv = root.range * i / 4
+                halo(Theme.num(rv, Math.abs(rv - Math.round(rv)) < 0.05 ? 0 : 1) + " м", p[0], p[1])
+            }
+            g.textBaseline = "alphabetic"
+            // ── значки на ободе ──
+            const tri = function (deg, c, filled, inward) {     // треугольник: вершина на кольце
+                const sz = 13, d = inward ? 1 : -1
+                const tip = pol(R - 2 * d, deg), l = pol(R + sz * d, deg - 3.5), r = pol(R + sz * d, deg + 3.5)
+                g.beginPath(); g.moveTo(tip[0], tip[1]); g.lineTo(l[0], l[1]); g.lineTo(r[0], r[1]); g.closePath()
+                g.fillStyle = filled ? c : Theme.panel; g.fill(); g.strokeStyle = c; g.lineWidth = 2; g.stroke()
+            }
+            tri(s.refHdg, Theme.accent, false, true)              // курс задания — контур снаружи
+            if (known) tri(s.hdg, col, true, false)                // курс — заливка внутри
+            const rimArrow = function (deg, c, inward) {           // стрелка у обода: ветер — к центру (откуда), возмущение — наружу (куда)
+                const a = pol(R - 4, deg), b = pol(R - 36, deg)
+                const from = inward ? a : b, to = inward ? b : a
+                g.strokeStyle = c; g.fillStyle = c; g.lineWidth = 3
+                g.beginPath(); g.moveTo(from[0], from[1]); g.lineTo(to[0], to[1]); g.stroke()
+                const ang = Math.atan2(to[1] - from[1], to[0] - from[0])
+                g.beginPath(); g.moveTo(to[0], to[1])
+                g.lineTo(to[0] - 11 * Math.cos(ang - 0.45), to[1] - 11 * Math.sin(ang - 0.45))
+                g.lineTo(to[0] - 11 * Math.cos(ang + 0.45), to[1] - 11 * Math.sin(ang + 0.45)); g.closePath(); g.fill()
+            }
+            if (s.windValid) rimArrow(root.windFromTrue, Theme.wind, true)
+            if (root.distKN > 2) rimArrow(root.distTo, Theme.dist, false)
+
+            // состояние курса — под центром, на подложке, ниже кормы
+            if (!known) {
+                g.fillStyle = Theme.alarm; g.font = Theme.cfont(16, true); g.textAlign = "center"
+                halo("курс неизвестен", cx, cy + R * 0.8)
+            } else if (s.posDR) {
+                g.fillStyle = Theme.warn; g.font = Theme.cfont(16, true); g.textAlign = "center"
+                halo("положение по счислению", cx, cy + R * 0.8)
+            }
         }
     }
     onSChanged: cv.requestPaint()
     onRangeChanged: cv.requestPaint()
     onFollowVesselChanged: cv.requestPaint()
+    onWidthChanged: cv.requestPaint()
+    onHeightChanged: cv.requestPaint()
 
-    Row {
-        anchors.left: parent.left; anchors.bottom: parent.bottom; anchors.margins: 10
-        spacing: 4
-        Label { text: "Масштаб:"; color: Theme.dim; font.pixelSize: Theme.fsSmall; anchors.verticalCenter: parent.verticalCenter }
-        Repeater {
-            model: [10, 25, 50, 100, 250]
-            delegate: Button {
-                text: modelData + " м"; flat: true; checkable: true; checked: root.range === modelData
-                font.pixelSize: Theme.fsSmall; implicitWidth: 62
-                onClicked: root.range = modelData
+    // ── окна по углам: цифры отдельно от графики ──
+    component Box: Rectangle {
+        color: Theme.panel2; radius: 3; border.color: Theme.line; border.width: 1
+    }
+    component Cap: Label { color: Theme.dim; font.pixelSize: 12; font.bold: true; font.letterSpacing: 1.2 }
+
+    Box {
+        id: hdgBox
+        visible: !!root.s.hasShip
+        anchors.left: parent.left; anchors.top: parent.top; anchors.margins: 10
+        width: 168; height: 78
+        border.color: !root.s.hdgValid ? Theme.alarm : root.s.hdgDR ? Theme.warn : Theme.line
+        border.width: root.s.hdgValid && !root.s.hdgDR ? 1 : 2
+        Cap { x: 10; y: 6; text: "КУРС" }
+        Label {
+            anchors.right: parent.right; anchors.rightMargin: 10; y: 6
+            text: !root.s.hdgValid ? "НЕТ" : root.s.hdgDR ? "СЧИСЛ." : "гиро"
+            color: root.hdgColor; font.pixelSize: 12; font.bold: true
+        }
+        Label {
+            x: 10; y: 26
+            text: root.s.hdgValid ? Theme.hdg3(root.s.hdg) : "— — —"
+            color: root.hdgColor; font.pixelSize: 34; font.family: Theme.mono
+        }
+    }
+
+    Box {
+        id: envBox
+        visible: !!root.s.hasShip
+        anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 10
+        width: 196; height: 78
+        Column {
+            x: 10; y: 6; spacing: 1; width: parent.width - 20
+            Row {
+                spacing: 6
+                Rectangle { width: 14; height: 3; radius: 1; color: Theme.wind; anchors.verticalCenter: parent.verticalCenter }
+                Label {
+                    text: root.s.windValid ? "Ветер " + Theme.bearing(root.windFromTrue) + " · " + Theme.num(Theme.knots(root.s.windSpeed), 1) + " уз" : "Ветер: нет данных"
+                    color: root.s.windValid ? Theme.wind : Theme.dim; font.pixelSize: 13; font.family: Theme.mono
+                }
+            }
+            Label {
+                leftPadding: 20; visible: !!root.s.windValid
+                text: "(" + Theme.num(root.s.windSpeed, 1) + " м/с, откуда)"; color: Theme.dim; font.pixelSize: 12
+            }
+            Row {
+                spacing: 6
+                Rectangle { width: 14; height: 3; radius: 1; color: Theme.dist; anchors.verticalCenter: parent.verticalCenter }
+                Label {
+                    text: "Возм. → " + Theme.bearing(root.distTo) + " · " + Theme.num(root.distKN, 0) + " кН"
+                    color: Theme.dist; font.pixelSize: 13; font.family: Theme.mono
+                }
             }
         }
-        CheckBox { text: "За судном"; checked: root.followVessel; onToggled: root.followVessel = checked; font.pixelSize: Theme.fsSmall }
     }
-    Column {
-        anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 12
-        spacing: 2
-        Repeater {
-            model: [["＋", Theme.accent, "заданная точка"], ["—", Theme.vessel, "судно (оценка ядра)"], ["×", Theme.dim, "истинное положение (имитатор)"], ["→", Theme.wind, "ветер, откуда"], ["→", Theme.dist, "внешнее возмущение, куда"]]
-            delegate: Row {
-                spacing: 6
-                Label { text: modelData[0]; color: modelData[1]; font.pixelSize: Theme.fsSmall; width: 14 }
-                Label { text: modelData[2]; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+
+    Box {
+        id: spdBox
+        visible: !!root.s.hasShip
+        anchors.left: parent.left; anchors.bottom: parent.bottom; anchors.margins: 10
+        width: 168; height: 78
+        Cap { x: 10; y: 6; text: "СКОРОСТЬ" }
+        Label { x: 10; y: 24; text: Theme.num(root.sogKn, 2) + " уз"; color: Theme.text; font.pixelSize: 22; font.family: Theme.mono }
+        Label {
+            x: 10; y: 52
+            text: (root.s.rot > 0 ? "+" : "") + Theme.num(root.s.rot, 1) + " °/мин"
+            color: Math.abs(root.s.rot || 0) > 3 ? Theme.warn : Theme.text; font.pixelSize: 15; font.family: Theme.mono
+        }
+    }
+
+    Box {
+        id: scaleBox
+        anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 10
+        width: 232; height: 78
+        Cap { x: 10; y: 6; text: "МАСШТАБ, М" }
+        Row {
+            x: 8; y: 22; spacing: 3
+            Repeater {
+                model: [10, 25, 50, 100, 250]
+                delegate: Rectangle {          // свои кнопки: стандартные обрезали «100» и «250»
+                    readonly property bool on: root.range === modelData
+                    width: 41; height: 26; radius: 3
+                    color: on ? Theme.accent : Theme.panel; border.color: on ? Theme.accent : Theme.line
+                    Label { anchors.centerIn: parent; text: modelData; font.pixelSize: 13; font.family: Theme.mono; color: parent.on ? Theme.bg : Theme.text }
+                    TapHandler { onTapped: root.range = modelData }
+                }
+            }
+        }
+        Row {
+            x: 4; y: 50; spacing: 2
+            CheckBox { text: "За судном"; checked: root.followVessel; onToggled: root.followVessel = checked; font.pixelSize: 12; implicitHeight: 26 }
+            Button { text: "Обозначения"; flat: true; checkable: true; checked: root.showLegend; onToggled: root.showLegend = checked; font.pixelSize: 12; implicitHeight: 26 }
+        }
+    }
+
+    // обозначения — по кнопке, не занимают место постоянно
+    Box {
+        visible: root.showLegend
+        anchors.right: scaleBox.right; anchors.bottom: scaleBox.top; anchors.bottomMargin: 6
+        width: legendCol.implicitWidth + 20; height: legendCol.implicitHeight + 16
+        Column {
+            id: legendCol
+            x: 10; y: 8; spacing: 2
+            Repeater {
+                model: [["＋", Theme.accent, "заданная точка"], ["▽", Theme.accent, "курс задания (на ободе)"],
+                        ["▲", Theme.vessel, "курс судна (на ободе)"], ["▭", Theme.vessel, "судно по оценке ядра"],
+                        ["×", Theme.dim, "истинное положение (имитатор)"], ["→", Theme.wind, "ветер, откуда (к центру)"],
+                        ["→", Theme.dist, "внешнее возмущение, куда (наружу)"]]
+                delegate: Row {
+                    spacing: 6
+                    Label { text: modelData[0]; color: modelData[1]; font.pixelSize: Theme.fsSmall; width: 14 }
+                    Label { text: modelData[2]; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+                }
             }
         }
     }
