@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
     app.setApplicationName("SDP HMI");
     app.setOrganizationName("SDP");
     QStringList a = app.arguments();
-    QString shot; int w = 1920, h = 1080, tab = 0; QStringList presses; int expectMode = -1, expectCa = -1;
+    QString shot; int w = 1920, h = 1080, tab = 0; QStringList presses; int expectMode = -1, expectCa = -1; QString expectState;
     HmiCore core;
     for (int i = 1; i < a.size(); ++i) {
         auto next = [&]() { return i + 1 < a.size() ? a[++i] : QString(); };
@@ -34,6 +34,7 @@ int main(int argc, char** argv) {
         else if (k == "--press") presses << next();
         else if (k == "--expect-mode") expectMode = next().toInt();
         else if (k == "--expect-ca") expectCa = next().toInt();
+        else if (k == "--expect-state") expectState = next();
         else if (k == "--tab") tab = next().toInt();
         else if (k == "--size") { const QStringList p = next().split('x'); if (p.size() == 2) { w = p[0].toInt(); h = p[1].toInt(); } }
     }

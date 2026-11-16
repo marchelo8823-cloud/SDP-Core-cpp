@@ -150,6 +150,7 @@ void HmiCore::refresh() {
             if (core_.simRunning() && i < core_.sim()->thrusters().size()) {
                 const auto& ts = core_.sim()->thrusters()[i]; fbPct = ts.pct(); fbAng = ts.angleDeg(); fb = true; failed = ts.failed() || !ts.cfg().enabled;
             }
+            x["fbLost"] = core_.engine() && core_.engine()->thrusterFbLost(i);   // THR_FB_LOST: выведен из распределения
             x["cmdPct"] = cmdPct; x["cmdAng"] = std::fmod(cmdAng + 360.0, 360.0);
             x["fbPct"] = fbPct; x["fbAng"] = std::fmod(fbAng + 360.0, 360.0); x["fb"] = fb; x["failed"] = failed;
             x["thrustKN"] = (fbPct >= 0 ? fbPct / 100.0 * t.maxForward : fbPct / 100.0 * t.maxReverse) / 1000.0;
