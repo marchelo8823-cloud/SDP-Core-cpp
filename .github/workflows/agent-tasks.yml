@@ -35,7 +35,7 @@ jobs:
           gh label create "соответствие"        --color 6D4C41 --description "Нарушение или новое требование правил" --force
 
   coordinator:
-    if: github.event_name == 'issues' && github.actor == github.repository_owner && github.event.label.name == 'агент:координатор'
+    if: vars.SDP_AGENTS_ON == 'true' && (github.event_name == 'issues' && github.actor == github.repository_owner && github.event.label.name == 'агент:координатор')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -68,7 +68,7 @@ jobs:
             --allowedTools Read,Glob,Grep,Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh issue create:*),Bash(gh issue comment:*)
 
   tester:
-    if: github.event_name == 'issues' && github.actor == github.repository_owner && github.event.label.name == 'агент:тестировщик'
+    if: vars.SDP_AGENTS_ON == 'true' && (github.event_name == 'issues' && github.actor == github.repository_owner && github.event.label.name == 'агент:тестировщик')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -110,7 +110,7 @@ jobs:
           retention-days: 14
 
   admin:
-    if: github.event_name == 'issues' && github.actor == github.repository_owner && github.event.label.name == 'агент:администратор'
+    if: vars.SDP_AGENTS_ON == 'true' && (github.event_name == 'issues' && github.actor == github.repository_owner && github.event.label.name == 'агент:администратор')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:

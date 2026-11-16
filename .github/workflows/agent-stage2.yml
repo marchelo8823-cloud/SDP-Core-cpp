@@ -19,7 +19,7 @@ env:
   MODEL: ${{ vars.SDP_AGENT_MODEL || 'claude-sonnet-5-5' }}
 jobs:
   data:
-    if: github.event_name == 'issues' && github.actor == github.repository_owner && github.event.label.name == 'агент:данные'
+    if: vars.SDP_AGENTS_ON == 'true' && (github.event_name == 'issues' && github.actor == github.repository_owner && github.event.label.name == 'агент:данные')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -97,9 +97,9 @@ jobs:
         run: tools/agent_publish.sh "agent/data-" '^отчёты/' "${{ github.event.issue.number }}"
   rules:
     if: >-
-      github.event_name == 'schedule' ||
+      vars.SDP_AGENTS_ON == 'true' && (github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' && github.actor == github.repository_owner) ||
-      (github.event_name == 'issues' && github.actor == github.repository_owner && github.event.label.name == 'агент:правила')
+      (github.event_name == 'issues' && github.actor == github.repository_owner && github.event.label.name == 'агент:правила'))
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -179,7 +179,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: tools/agent_publish.sh "agent/rules-" '^отчёты/' "${{ github.event.issue.number }}"
   display:
-    if: github.event_name == 'issues' && github.actor == github.repository_owner && github.event.label.name == 'агент:отображение'
+    if: vars.SDP_AGENTS_ON == 'true' && (github.event_name == 'issues' && github.actor == github.repository_owner && github.event.label.name == 'агент:отображение')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -256,7 +256,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: tools/agent_publish.sh "agent/display-" '^(отчёты/|shipedit/mainwindow\.cpp$)' "${{ github.event.issue.number }}"
   operators:
-    if: github.event_name == 'issues' && github.actor == github.repository_owner && github.event.label.name == 'агент:операторы'
+    if: vars.SDP_AGENTS_ON == 'true' && (github.event_name == 'issues' && github.actor == github.repository_owner && github.event.label.name == 'агент:операторы')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
