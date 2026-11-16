@@ -125,6 +125,7 @@ public:
             fr = hub.buildFrame(monotonicSeconds());
         }
         out_ = eng.step(dt_, fr);
+        if (active() && opSpSet_) opSp_ = eng.controller().setpoint();   // уставку мог перенести сам движок (here после возврата положения)
         for (const auto& s : out_.infos) { alarms_.info(clock(), s); say(s); }
         alarms_.update(clock(), out_.alarms);
         for (const auto& a : out_.alarms) if (shown_.insert({a.code, true}).second) say("ТРЕВОГА " + a.code + ": " + a.text);
@@ -170,6 +171,7 @@ public:
                "  set <север м> <восток м> <курс °>   задать точку и курс\n"
                "  move <dС м> <dВ м> [dКурс °]        сдвинуть точку\n"
                "  hdg <курс °>                        задать курс\n"
+               "  here                                после потери положения: держать здесь, а не возвращаться в заданную точку\n"
                "  pivot <вдоль м> <поперёк м>         центр вращения (+ к носу, + на правый борт)\n"
                "  rate rot <°/мин>|off, rate speed <уз>|off   предел скорости поворота и перемещения\n"
                "  law pid|lqr|mpc                     закон управления\n"
@@ -237,6 +239,7 @@ public:
         }
         else if (c == "set") { double n, e, h; if (is >> n >> e >> h) setSp({n, e, h}); else say("Формат: set <север> <восток> <курс>"); }
         else if (c == "move") { double dn, de, dh = 0; if (is >> dn >> de) { is >> dh; const Setpoint b = base(); setSp({b.n + dn, b.e + de, b.psiDeg + dh}); } else say("Формат: move <dС> <dВ> [dКурс]"); }
+        else if (c == "here") { say(eng.holdHere()); if (activeNow) opSp_ = eng.controller().setpoint(); }
         else if (c == "hdg") { double h; if (is >> h) { const Setpoint b = base(); setSp({b.n, b.e, h}); } else say("Формат: hdg <курс>"); }
         else if (c == "pivot") {
             double px, py;

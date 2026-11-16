@@ -58,7 +58,27 @@ public:
     void setThrusterEnabled(size_t i, bool on) { if (i < want_.size()) want_[i] = on ? 1 : 0; alloc_.setEnabled(i, on && !(i < fbOut_.size() && fbOut_[i])); }
     bool thrusterFbLost(size_t i) const { return i < fbOut_.size() && fbOut_[i]; }
     void setThrusterPreload(size_t i, double prefDeg, double pct) { alloc_.setPreload(i, prefDeg, pct); }
-    void setMode(DpMode m) { ctl_.setMode(m, est_.state()); }
+    void setMode(DpMode m) { ctl_.setMode(m, est_.state()); hereReq_ = false; }
+    // «Держать здесь» (выбор оператора после потери положения, как Hold в NAVIS NavDP 4000): по умолчанию после возврата
+    // измерений судно плавно возвращается в заданную точку (POS_RETURN). Эта команда вместо возврата делает заданной точкой
+    // место, где судно находится: во время возврата — сразу; пока измерений нет — в момент их возврата (оценке по счислению
+    // в это время верить нельзя). Курс заданный не меняется. Новая уставка оператора отменяет запрос. Возвращает текст для оператора.
+    std::string holdHere() {
+        const EstimatorState& es = est_.state();
+        if (ctl_.mode() != DpMode::AutoPosition) return "Команда here действует только в режиме удержания позиции.";
+        if (ctl_.returning()) {
+            const Setpoint sp = ctl_.setpoint();
+            ctl_.setSetpoint(ctl_.holdFromCrp(es.n, es.e, sp.psiDeg));
+            hereReq_ = false;
+            return "Возврат отменён: заданной точкой стало текущее положение судна.";
+        }
+        if (dropLatched_ || es.refLost) {
+            hereReq_ = true; hereSp_ = ctl_.setpoint();
+            return "Принято: когда системы положения вернутся, заданной точкой станет место, где окажется судно (без возврата).";
+        }
+        return "Команда here действует при потере положения (POS_ALL_REJ, POS_DROPOUT) и во время возврата (POS_RETURN).";
+    }
+    bool holdHereRequested() const { return hereReq_; }
     DpMode mode() const { return ctl_.mode(); }
 
     EngineOutput step(double dt, const SensorFrame& fr) {
@@ -182,20 +202,26 @@ public:
         if (needPos && es.posValid && es.refLost) {
             if (es.posDropout) {
                 char u[160]; std::snprintf(u, sizeof u, "вероятный уход ≈ %.1f м (оценка), погрешность фильтра до %.1f м", es.drDriftM, es.posUncertM);
-                o.alarms.push_back({"POS_DROPOUT", "Потеря положения — нет измерений " + std::to_string(static_cast<int>(es.refLostS)) + " с, удержание по модели (счисление), " + u, true, 1});
+                o.alarms.push_back({"POS_DROPOUT", "Потеря положения — нет измерений " + std::to_string(static_cast<int>(es.refLostS)) + " с, удержание по модели (счисление), " + u +
+                                    (hereReq_ ? "; после возврата — держать здесь (выбор оператора)" : "; после возврата — в заданную точку, держать здесь — команда here"), true, 1});
                 dropLatched_ = true;
             } else o.alarms.push_back({"POS_ALL_REJ", "Все системы положения отклонены или недоступны — удержание по модели", true, 1});
         }
         if (dropLatched_ && !es.refLost) {   // измерения положения вернулись после потери
             dropLatched_ = false;
-            if (m == DpMode::AutoPosition) {
+            const bool here = hereReq_ && m == DpMode::AutoPosition && sameSp(ctl_.setpoint(), hereSp_);
+            hereReq_ = false;
+            if (here) {
+                ctl_.setSetpoint(ctl_.holdFromCrp(es.n, es.e, ctl_.setpoint().psiDeg));
+                o.infos.push_back("Положение восстановлено: заданной точкой стало текущее положение судна (выбор оператора, без возврата)");
+            } else if (m == DpMode::AutoPosition) {
                 const Setpoint crp = ctl_.crpFromHold(ctl_.setpoint());
                 const double d = std::hypot(es.n - crp.n, es.e - crp.e);
                 const ControlCfg& cc = ctl_.cfg();
-                char b[200];
+                char b[320];
                 if (d > cc.returnStartM) {
                     ctl_.beginReturn(es, cc.returnSpeedMS, 3.0);
-                    std::snprintf(b, sizeof b, "Положение восстановлено: судно в %.1f м от заданной точки, возврат со скоростью до %.1f м/с", d, cc.returnSpeedMS > 0 ? std::min(cc.returnSpeedMS, cc.refMaxSpeed) : cc.refMaxSpeed);
+                    std::snprintf(b, sizeof b, "Положение восстановлено: судно в %.1f м от заданной точки, возврат со скоростью до %.1f м/с; держать здесь — команда here", d, cc.returnSpeedMS > 0 ? std::min(cc.returnSpeedMS, cc.refMaxSpeed) : cc.refMaxSpeed);
                 } else std::snprintf(b, sizeof b, "Положение восстановлено: судно в %.1f м от заданной точки", d);
                 o.infos.push_back(b);
             } else o.infos.push_back("Положение восстановлено");
@@ -203,7 +229,7 @@ public:
         if (wasReturning_ && !ctl_.returning() && m == DpMode::AutoPosition) o.infos.push_back("Возврат в заданную точку завершён");
         wasReturning_ = ctl_.returning();
         if (m == DpMode::AutoPosition && ctl_.returning()) {
-            char b[160]; std::snprintf(b, sizeof b, "Возврат в заданную точку после потери положения: осталось %.1f м", ctl_.returnLeftM());
+            char b[200]; std::snprintf(b, sizeof b, "Возврат в заданную точку после потери положения: осталось %.1f м (держать здесь — команда here)", ctl_.returnLeftM());
             o.alarms.push_back({"POS_RETURN", b, false});
         }
         for (const auto& pa : es.posAlerts) o.alarms.push_back({pa.first, pa.second, false});
@@ -318,6 +344,8 @@ public:
 
 private:
     bool highLoad_ = false, dropLatched_ = false, wasReturning_ = false; double onT_ = 0, offT_ = 0;
+    bool hereReq_ = false; Setpoint hereSp_;
+    static bool sameSp(const Setpoint& a, const Setpoint& b) { return std::fabs(a.n - b.n) < 1e-6 && std::fabs(a.e - b.e) < 1e-6 && std::fabs(a.psiDeg - b.psiDeg) < 1e-6; }
     std::vector<char> want_, fbSeen_, fbOut_; std::vector<double> fbLostT_;
     Forecaster fc_; Capability lastCap_; bool lastSat_ = false; double satT_ = 0, satClrT_ = 0; bool satOn_ = false;
     double hdgLim_ = 0; bool hWarn_ = false, hOut_ = false; double hWarnOn_ = 0, hWarnOff_ = 0, hOutOn_ = 0, hOutOff_ = 0;
