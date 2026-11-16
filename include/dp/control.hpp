@@ -50,6 +50,9 @@ struct ControlCfg {
     // возврат в заданную точку после потери положения: если судно ушло дальше returnStartM, опорная точка начинается с того места,
     // где судно оказалось, и идёт к заданной точке не быстрее returnSpeedMS (0 — без ограничения, только refMaxSpeed)
     double returnSpeedMS = 0.2, returnStartM = 2.0;
+    // торможение дрейфа в начале возврата: опорная точка стартует со скоростью судна и гасит её с этим ускорением, м/с²
+    // (не догоняет судно полным упором; решение владельца 16.11.2026)
+    double returnBrakeAccel = 0.05;
     // автопилот
     double apSpeedKp = 0.15, apSpeedKi = 0.01;   // доли массы на (м/с)
 };
@@ -233,6 +236,8 @@ struct Reference {
     bool inited = false;
 
     void reset(double n0, double e0, double psi0) { n = n0; e = e0; vn = ve = 0; an = ae = 0; psi = psi0; r = 0; inited = true; }
+    // то же, но со скоростью: опорная точка начинает движение так, как движется судно (возврат после потери положения)
+    void resetMoving(double n0, double e0, double psi0, double vn0, double ve0) { reset(n0, e0, psi0); vn = vn0; ve = ve0; }
 
     // Перемещение к целевой точке с ограничением скорости и ускорения; velFF — скорость цели.
     void moveTo(double dt, double tn, double te, double vtn, double vte, const ControlCfg& c) {
@@ -322,10 +327,12 @@ public:
     void setSetpoint(const Setpoint& s) { sp_ = s; returning_ = false; }   // новая уставка от оператора отменяет возврат
     // Возврат в заданную точку после потери положения: уставка не меняется, опорная точка (и курс) начинают с того места, где судно
     // оказалось по оценке, holdS секунд стоят на нём (оценка успокаивается после первых измерений), затем идут к уставке не быстрее speedMS.
+    // Опорная точка стартует не с нулевой, а со скоростью судна по оценке: иначе дрейфующее судно уходило от неподвижной опорной
+    // точки, регулятор догонял его полным упором и судно проскакивало заданную точку (найдено на Mac владельца 16.11.2026).
     void beginReturn(const EstimatorState& est, double speedMS, double holdS) {
-        ref_.reset(est.n, est.e, est.psi);
-        { double dn, de; bodyToNe(pvx_, pvy_, est.psi, dn, de); pref_.reset(est.n + dn, est.e + de, est.psi); }
-        returning_ = true; returnCap_ = std::max(0.0, speedMS); returnHoldS_ = std::max(0.0, holdS);
+        ref_.resetMoving(est.n, est.e, est.psi, est.vn, est.ve);
+        { double dn, de; bodyToNe(pvx_, pvy_, est.psi, dn, de); pref_.resetMoving(est.n + dn, est.e + de, est.psi, est.vn, est.ve); }
+        returning_ = true; returnCap_ = std::max(0.0, speedMS); returnHoldS_ = returnHold0_ = std::max(0.0, holdS); holdLastSet_ = false; holdExtS_ = 0;
     }
     bool returning() const { return returning_; }
     // расстояние от опорной точки до уставки (точки центра вращения), м — сколько осталось вернуться
@@ -374,10 +381,15 @@ public:
 
         switch (mode_) {
             case DpMode::AutoPosition:
-                if (returning_ && returnHoldS_ > 0) {   // выдержка после возврата измерений: опорная точка — там, где судно
+                if (returning_ && returnHoldS_ > 0) {   // выдержка после возврата измерений: опорная точка — там, где судно, и с его скоростью
+                    // Пока оценка положения ещё поправляется по вернувшимся измерениям (скачок или плавная коррекция после счисления),
+                    // выдержка продлевается: иначе опорная точка оставалась на старой, ошибочной оценке, и судно гнали к ней полным упором.
+                    const double jn = est.n - (holdLastN_ + holdLastVn_ * dt), je = est.e - (holdLastE_ + holdLastVe_ * dt);
+                    if (holdLastSet_ && holdExtS_ < 30.0 && (std::hypot(jn, je) > 0.3 || est.softCorrecting)) { holdExtS_ += std::max(0.0, returnHold0_ - returnHoldS_); returnHoldS_ = returnHold0_; }   // не дольше 30 с сверх выдержки
+                    holdLastN_ = est.n; holdLastE_ = est.e; holdLastVn_ = est.vn; holdLastVe_ = est.ve; holdLastSet_ = true;
                     returnHoldS_ -= dt;
-                    ref_.reset(est.n, est.e, est.psi);
-                    double dn, de; bodyToNe(pvx_, pvy_, est.psi, dn, de); pref_.reset(est.n + dn, est.e + de, est.psi);
+                    ref_.resetMoving(est.n, est.e, est.psi, est.vn, est.ve);
+                    double dn, de; bodyToNe(pvx_, pvy_, est.psi, dn, de); pref_.resetMoving(est.n + dn, est.e + de, est.psi, est.vn, est.ve);
                 }
                 if (pivotOff()) {   // удерживается точка центра вращения; положение судна следует за курсом задания
                     pref_.moveTo(dt, sp_.n, sp_.e, 0, 0, eff());
@@ -573,11 +585,13 @@ private:
         ControlCfg c = cfg_;
         if (capSpeed_ > 0) { c.refMaxSpeed = std::min(c.refMaxSpeed, capSpeed_); c.refCapTotal = true; }
         if (returning_ && returnCap_ > 0) { c.refMaxSpeed = std::min(c.refMaxSpeed, returnCap_); c.refCapTotal = true; }
+        if (returning_) c.refAccel = std::max(c.refAccel, c.returnBrakeAccel);
         if (capRot_ > 0) c.refMaxRotDegS = std::min(c.refMaxRotDegS, capRot_);
         return c;
     }
     double capSpeed_ = 0, capRot_ = 0;
-    bool returning_ = false; double returnCap_ = 0, returnHoldS_ = 0;
+    bool returning_ = false; double returnCap_ = 0, returnHoldS_ = 0, returnHold0_ = 0;
+    bool holdLastSet_ = false; double holdExtS_ = 0, holdLastN_ = 0, holdLastE_ = 0, holdLastVn_ = 0, holdLastVe_ = 0;
     double nHeld_ = 0;   // момент по курсу, сглаженный за ~10 с: держится при счислении курса
     VesselCfg vcfg_;
     ControlCfg cfg_;

@@ -50,6 +50,7 @@ endif()
 # рабочий цикл и ввод данных судна
 dp_test(core_test ${D}/Данные_судна_пример.xlsx ${D}/Данные_имитатора_пример.xlsx ${CMAKE_CURRENT_SOURCE_DIR}/tests/books/нет_упора.xlsx)
 dp_test(capability_test ${D}/Данные_судна_пример.xlsx)
+dp_test(return_seeds_test ${D}/Данные_судна_пример.xlsx ${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/имитатор_быстро.xlsx)
 dp_test(consequence_test ${D}/Данные_судна_пример.xlsx ${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/имитатор_быстро.xlsx)
 dp_test(alloc_turn_test ${D}/Данные_судна_пример.xlsx)
 dp_test(shipbook_test ${D}/Данные_судна_шаблон.xlsx ${D}/Данные_судна_пример.xlsx ${CMAKE_CURRENT_SOURCE_DIR}/tests/books ${D}/Данные_имитатора_шаблон.xlsx ${D}/Данные_имитатора_пример.xlsx)

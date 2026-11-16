@@ -209,6 +209,7 @@ public:
                                     (hereReq_ ? "; после возврата — держать здесь (выбор оператора)" : "; после возврата — в заданную точку, держать здесь — команда here"), true, 1});
                 dropLatched_ = true;
             } else o.alarms.push_back({"POS_ALL_REJ", "Все системы положения отклонены или недоступны — удержание по модели", true, 1});
+            if (ctl_.returning()) dropLatched_ = true;   // потеря во время возврата: после неё возврат начнётся заново от верной оценки
         }
         if (dropLatched_ && !es.refLost) {   // измерения положения вернулись после потери
             dropLatched_ = false;
@@ -222,7 +223,10 @@ public:
                 const double d = std::hypot(es.n - crp.n, es.e - crp.e);
                 const ControlCfg& cc = ctl_.cfg();
                 char b[320];
-                if (d > cc.returnStartM) {
+                // Возврат начинается заново и тогда, когда судно близко к точке, но возврат уже шёл (потеря во время возврата):
+                // иначе опорная точка оставалась там, куда её привела ошибочная оценка по счислению (найдено 16.11.2026).
+                const bool wasRet = ctl_.returning();
+                if (d > cc.returnStartM || wasRet) {
                     ctl_.beginReturn(es, cc.returnSpeedMS, 3.0);
                     std::snprintf(b, sizeof b, "Положение восстановлено: судно в %.1f м от заданной точки, возврат со скоростью до %.1f м/с; держать здесь — команда here", d, cc.returnSpeedMS > 0 ? std::min(cc.returnSpeedMS, cc.refMaxSpeed) : cc.refMaxSpeed);
                 } else std::snprintf(b, sizeof b, "Положение восстановлено: судно в %.1f м от заданной точки", d);
