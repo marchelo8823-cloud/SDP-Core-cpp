@@ -9,7 +9,7 @@ mkdir -p test-out
 if command -v timeout >/dev/null 2>&1; then TO() { timeout "$@"; }; else TO() { shift; "$@"; }; fi
 # Qt из Homebrew на Mac
 PFX=""; command -v brew >/dev/null 2>&1 && [ -d "$(brew --prefix qt 2>/dev/null)" ] && PFX="-DCMAKE_PREFIX_PATH=$(brew --prefix qt)"
-{ cmake -S . -B build -DSDP_BUILD_EDITOR=$EDITOR_ON $PFX && cmake --build build -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"; } > test-out/сборка.txt 2>&1
+{ cmake -S . -B build -DSDP_BUILD_EDITOR=$EDITOR_ON -DSDP_BUILD_HMI=$EDITOR_ON $PFX && cmake --build build -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"; } > test-out/сборка.txt 2>&1
 BUILD=$?
 TESTS=1
 if [ $BUILD -eq 0 ]; then
@@ -18,6 +18,14 @@ if [ $BUILD -eq 0 ]; then
     n=$(basename "$s" .txt)
     TO 300 ./build/sdp_run --script "$s" --status 30 > "test-out/сценарий_$n.txt" 2>&1 || echo "(сценарий завершён с кодом $?)" >> "test-out/сценарий_$n.txt"
   done
+  if [ -x build/hmi/sdp_hmi ]; then
+    H() { QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software TO 90 ./build/hmi/sdp_hmi "$@"; }
+    SHIP=data/Данные_судна_пример.xlsx; SIM=tests/scenarios/имитатор_быстро.xlsx
+    H --screenshot test-out/пульт_1_нет_судна.png >/dev/null 2>&1 || true
+    H --ship $SHIP --sim $SIM --run 20 --cmd "thr_take all" --cmd position --run 300 --screenshot test-out/пульт_2_удержание.png >/dev/null 2>&1 || true
+    H --ship $SHIP --sim $SIM --run 20 --cmd "thr_take all" --cmd position --run 300 --cmd "sim off GNSS1" --cmd "sim off GNSS2" --cmd "sim off LASER" --run 40 --screenshot test-out/пульт_3_потеря_положения.png >/dev/null 2>&1 || true
+    H --ship $SHIP --sim $SIM --run 20 --cmd "thr_take all" --cmd position --run 300 --cmd "sim thr off AZ1" --cmd "sim wind 18 90" --run 120 --screenshot test-out/пульт_4_отказ_AZ1_ветер_18.png >/dev/null 2>&1 || true
+  fi
   if [ -x build/shipedit/sdp_ship ]; then
     for t in 0 1 2 3 4 5 6 7; do
       QT_QPA_PLATFORM=offscreen TO 60 ./build/shipedit/sdp_ship "data/чертёж/Данные_судна_с_чертежом.xlsx" --tab $t --screenshot "test-out/снимок_вкладка_$t.png" >/dev/null 2>&1 || true
