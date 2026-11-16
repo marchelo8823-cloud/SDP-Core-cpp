@@ -20,6 +20,7 @@ class HmiCore : public QObject {
     Q_PROPERTY(QVariantList track READ track NOTIFY changed)       // след судна: [n, e, n, e, …] за последние минуты
     Q_PROPERTY(QVariantMap hull READ hull NOTIFY shipChanged)     // корпус для рисования: длина, ширина, движители и датчики на корпусе
     Q_PROPERTY(QStringList log READ log NOTIFY logChanged)
+    Q_PROPERTY(QVariantMap trends READ trends NOTIFY changed)     // тренды за 15 мин (раз в 2 с): opErr, errHdg, load, wind
 public:
     explicit HmiCore(QObject* parent = nullptr);
     QVariantMap s() const { return s_; }
@@ -29,11 +30,14 @@ public:
     QVariantList track() const { return trk_; }
     QVariantMap hull() const { return hull_; }
     QStringList log() const { return log_; }
+    QVariantMap trends() const { return trends_; }
 
     Q_INVOKABLE void command(const QString& line);              // любая команда ядра (как в sdp_run)
     Q_INVOKABLE void loadShip(const QString& pathOrUrl);
     Q_INVOKABLE void simStart(const QString& pathOrUrl);
     Q_INVOKABLE void ack();                                       // квитирование тревог (снимает мигание новых)
+    Q_INVOKABLE QString setting(const QString& key) const;        // настройки пульта (рабочие места): хранятся в QSettings
+    Q_INVOKABLE void setSetting(const QString& key, const QString& value);
     void runFor(double seconds);                                  // прогнать ядро без реального времени (для проверок и снимков)
     void setPaused(bool p) { paused_ = p; }
 
@@ -56,6 +60,8 @@ private:
     QStringList log_;
     std::deque<std::pair<double, double>> trail_;
     std::deque<double> loadHist_;                                 // загрузка движителей раз в 2 с за 5 мин
+    std::deque<double> trOpErr_, trErrHdg_, trLoad_, trWind_;     // тренды раз в 2 с за 15 мин
+    QVariantMap trends_;
     QHash<QString, QString> alarmTime_;                           // когда тревога появилась (часы пульта)
     void sample(double load);
     double lastTrail_ = -1e9;

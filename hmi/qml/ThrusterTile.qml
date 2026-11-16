@@ -34,6 +34,7 @@ Rectangle {
             Layout.fillWidth: true; Layout.fillHeight: true; spacing: 10
             Canvas {
                 id: dial
+                visible: tile.width >= 300          // в узкой ячейке — только числа и полоса
                 Layout.preferredWidth: 110; Layout.preferredHeight: 110
                 onPaint: {
                     const g = getContext("2d"); g.reset()

@@ -32,6 +32,7 @@ Rectangle {
                 return
             }
             const R = Math.min(W, H) / 2 - 62       // место снаружи — под круг с градусами
+            if (R < 40) return                       // окно ещё не разложено или слишком мало
             const k = R / root.range                 // пикселей на метр
             const cx = W / 2, cy = H / 2
             const c0n = root.followVessel ? s.n : s.refN, c0e = root.followVessel ? s.e : s.refE
