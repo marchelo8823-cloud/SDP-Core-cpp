@@ -82,7 +82,7 @@ Rectangle {
                 g.strokeStyle = Theme.warn; g.fillStyle = Theme.tint(Theme.warn, 0.10); g.lineWidth = 2; g.setLineDash([8, 6])
                 g.beginPath(); g.arc(X(s.e), Y(s.n), s.drDriftM * k, 0, 2 * Math.PI); g.fill(); g.stroke(); g.setLineDash([])
                 g.fillStyle = Theme.warn; g.font = "13px '" + Theme.font + "'"; g.textAlign = "left"
-                g.fillText("вероятный уход до " + Theme.num(s.drDriftM, 0) + " м", X(s.e) + s.drDriftM * k * 0.72 + 6, Y(s.n) + s.drDriftM * k * 0.72 + 14)
+                g.fillText("вероятный уход до " + Theme.num(s.drDriftM, s.drDriftM < 10 ? 1 : 0) + " м", X(s.e) + s.drDriftM * k * 0.72 + 6, Y(s.n) + s.drDriftM * k * 0.72 + 14)
             }
             // заданная точка и курс задания
             const rx = X(s.refE), ry = Y(s.refN)

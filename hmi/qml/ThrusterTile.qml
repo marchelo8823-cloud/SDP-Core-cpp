@@ -24,10 +24,10 @@ Rectangle {
             Label { text: t.type || ""; color: Theme.dim; font.pixelSize: Theme.fsSmall; Layout.fillWidth: true }
             Rectangle {
                 radius: 2; implicitWidth: st.implicitWidth + 10; implicitHeight: st.implicitHeight + 4
-                color: t.failed ? Theme.alarm : cut && t.taken ? Theme.tint(Theme.alarm, 0.22) : t.taken ? Theme.tint(Theme.ok, 0.18) : Theme.line
+                color: t.failed ? Theme.alarm : t.fbLost ? Theme.tint(Theme.warn, 0.22) : cut && t.taken ? Theme.tint(Theme.alarm, 0.22) : t.taken ? Theme.tint(Theme.ok, 0.18) : Theme.line
                 Label { id: st; anchors.centerIn: parent; font.pixelSize: 12; font.bold: true
-                        color: t.failed ? Theme.bg : cut && t.taken ? Theme.alarm : t.taken ? Theme.ok : Theme.text
-                        text: t.failed ? "ОТКАЗ" : !t.enabled ? "вне работы" : cut && t.taken ? "упор снят" : t.taken ? "в управлении" : "не взят" }
+                        color: t.failed ? Theme.bg : t.fbLost ? Theme.warn : cut && t.taken ? Theme.alarm : t.taken ? Theme.ok : Theme.text
+                        text: t.failed ? "ОТКАЗ" : t.fbLost ? "нет обратной связи" : !t.enabled ? "вне работы" : cut && t.taken ? "упор снят" : t.taken ? "в управлении" : "не взят" }
             }
         }
         RowLayout {
