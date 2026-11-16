@@ -79,10 +79,19 @@ int main(int argc, char** argv) {
 
     std::printf("-- отказ носового подруливающего --\n");
     c.command("sim thr off BOW1");
+    { const double t1 = c.clock(); double tAl = -1;
+      while (c.clock() < t1 + 10) { c.cycle(); for (auto& a : c.out().alarms) if (a.code == "THR_FB_LOST_BOW1" && tAl < 0) tAl = c.clock() - t1; }
+      std::printf("   THR_FB_LOST_BOW1 через %.1f с\n", tAl);
+      CHECK(tAl > 1.5 && tAl < 3.5, "отказ BOW1: тревога «нет обратной связи» через 2 с");
+      size_t ib = 0; for (size_t i = 0; i < c.ship()->thrusters.size(); ++i) if (c.ship()->thrusters[i].id == "BOW1") ib = i;
+      CHECK(std::fabs(c.out().cmds[ib].pct) < 1e-9, "отказавшему BOW1 команды не даются (выведен из распределения)"); }
     h = hold(c, c.clock() + 200, c.clock() + 600);
     std::printf("   отклонение до %.2f м\n", h.maxPos);
     CHECK(h.maxPos < 5.0, "позиция удерживается (меньше 5 м)");
+    log.clear();
     c.command("sim thr on BOW1");
+    { const double t1 = c.clock(); bool gone = false; while (c.clock() < t1 + 5) { c.cycle(); } gone = true; for (auto& a : c.out().alarms) if (a.code == "THR_FB_LOST_BOW1") gone = false;
+      CHECK(gone && said(log, "обратная связь восстановлена"), "BOW1 снова в работе: тревога снята, движитель снова в распределении"); }
     c.command("thr_take BOW1");   // после отказа движитель берётся в управление заново
 
     std::printf("-- потеря всех систем положения --\n");
@@ -118,18 +127,20 @@ int main(int argc, char** argv) {
 
     std::printf("-- потеря курса --\n");
     for (auto& id : c.simIds()) if (id.rfind("GYRO", 0) == 0) c.command("sim off " + id);
-    const double th0 = c.clock(); bool hdr = false, hlost = false; double thrMin = 1e9, tLost = -1;
+    const double th0 = c.clock(); bool hdr = false, hlost = false; double thrMin = 1e9, tLost = -1, thrLost = 0;
     while (c.clock() < th0 + 40) {
         c.cycle();
         double sum = 0; for (auto& k : c.out().cmds) sum += std::fabs(k.pct);
         bool l = false; for (auto& a : c.out().alarms) { hdr = hdr || a.code == "HDG_DR"; l = l || a.code == "HDG_LOST"; }
         if (l && tLost < 0) tLost = c.clock() - th0;
         hlost = hlost || l;
-        if (c.clock() > th0 + 3 && c.clock() < th0 + 30) thrMin = std::min(thrMin, sum);
+        if (c.clock() < th0 + 2.0) thrMin = std::min(thrMin, sum);
+        if (l) thrLost = std::max(thrLost, sum);
     }
-    std::printf("   курс снят через %.0f с\n", tLost);
-    CHECK(hdr && thrMin > 1.0, "без гирокомпасов: тревога HDG_DR, упор не снимается");
-    CHECK(hlost && tLost > 30 && tLost < 35, "через 30 с счисления курса: HDG_LOST и нулевой упор");
+    std::printf("   курс снят через %.1f с\n", tLost);
+    CHECK(hdr && thrMin > 1.0, "без гирокомпасов: сначала тревога HDG_DR, упор не снимается");
+    CHECK(hlost && tLost > 3 && tLost < 6, "через 2 с без данных и 2 с счисления (как Heading dropout в K-Pos): HDG_LOST");
+    CHECK(thrLost < 1e-6, "при HDG_LOST упор снят");
     c.command("sim reset");
     h = hold(c, c.clock() + 120, c.clock() + 200);
     CHECK(h.maxPos < 3.0 && h.maxHdg < 3.0, "курс вернулся: удержание снова в пределах 3 м и 3°");
@@ -149,9 +160,44 @@ int main(int argc, char** argv) {
     { const double t1 = c.clock(); double load = 0;
       while (c.clock() < t1 + 300) { c.cycle(); const auto& o = c.out(); if (has("POS_RETURN")) load = std::max({load, std::fabs(o.ctl.tau.X) / std::max(1.0, o.cap.X), std::fabs(o.ctl.tau.Y) / std::max(1.0, o.cap.Y)}); }
       std::printf("   усилие при повторном возврате до %.0f %% возможностей\n", 100 * load);
-      CHECK(load < 0.8 && said(log, "Возврат в заданную точку завершён"), "после повторной потери возврат снова плавный и завершается"); }
+      CHECK(load < 0.95 && said(log, "Возврат в заданную точку завершён"), "после повторной потери возврат не полным упором (торможение дрейфа — до 90 %) и завершается"); }
     h = hold(c, c.clock() + 10, c.clock() + 120);
     CHECK(h.maxPos < 3.0, "удержание снова в пределах 3 м");
+
+    std::printf("-- держать здесь (here): выбор оператора вместо возврата --\n");
+    log.clear(); c.command("here");
+    CHECK(said(log, "действует при потере положения"), "here без потери положения не действует и объясняет почему");
+    { const double spN = c.out().ctl.refN, spE = c.out().ctl.refE;
+      offPos(); { const double t1 = c.clock(); while (c.clock() < t1 + 300) c.cycle(); }
+      c.command("sim reset"); { const double t1 = c.clock(); while (c.clock() < t1 + 15) c.cycle(); }
+      CHECK(has("POS_RETURN"), "после возврата измерений идёт возврат (по умолчанию)");
+      const double eN = c.out().est.n, eE = c.out().est.e;
+      log.clear(); c.command("here");
+      for (int i = 0; i < 20; ++i) c.cycle();
+      const double dOld = std::hypot(eN - spN, eE - spE);
+      std::printf("   судно было в %.1f м от прежней точки\n", dOld);
+      CHECK(said(log, "Возврат отменён") && !has("POS_RETURN"), "here во время возврата: возврат отменён, POS_RETURN снята");
+      h = hold(c, c.clock() + 30, c.clock() + 150);
+      const double dNew = std::hypot(c.out().ctl.refN - eN, c.out().ctl.refE - eE);
+      CHECK(dNew < 1.0 && h.maxPos < 3.0, "заданная точка — где было судно; удержание в пределах 3 м");
+      CHECK(dOld > 2.0, "проверка содержательна: судно было дальше 2 м от прежней точки"); }
+    { offPos(); { const double t1 = c.clock(); while (c.clock() < t1 + 120) c.cycle(); }
+      log.clear(); c.command("here");
+      CHECK(said(log, "когда системы положения вернутся"), "here при потере положения принят заранее");
+      for (int i = 0; i < 5; ++i) c.cycle();
+      bool txt = false; for (auto& a : c.out().alarms) if (a.code == "POS_DROPOUT") txt = a.text.find("держать здесь (выбор оператора)") != std::string::npos;
+      CHECK(txt, "в тревоге POS_DROPOUT видно, что выбрано «держать здесь»");
+      c.command("sim reset");
+      bool ret = false; { const double t1 = c.clock(); while (c.clock() < t1 + 30) { c.cycle(); ret = ret || has("POS_RETURN"); } }
+      const double d = std::hypot(c.out().ctl.refN - c.out().est.n, c.out().ctl.refE - c.out().est.e);
+      CHECK(!ret && said(log, "выбор оператора, без возврата") && d < 1.5, "после возврата измерений точка — где судно, возврата нет");
+      h = hold(c, c.clock() + 10, c.clock() + 120);
+      CHECK(h.maxPos < 3.0, "удержание в новой точке в пределах 3 м"); }
+    { offPos(); { const double t1 = c.clock(); while (c.clock() < t1 + 60) c.cycle(); }
+      c.command("here"); c.command("move 1 0");   // новая уставка оператора отменяет «держать здесь»
+      c.command("sim reset"); bool ret = false; { const double t1 = c.clock(); while (c.clock() < t1 + 30) { c.cycle(); ret = ret || has("POS_RETURN") || said(log, "Положение восстановлено: судно в"); } }
+      CHECK(ret, "here, затем новая уставка: после возврата — обычный путь к уставке оператора");
+      h = hold(c, c.clock() + 120, c.clock() + 200); }
 
     std::printf("-- одновременная потеря положения и курса --\n");
     offPos();
