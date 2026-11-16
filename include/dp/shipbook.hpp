@@ -173,6 +173,20 @@ inline bool toJson(const xlsx::Book& book, std::string& out, BookReport& rep) {
                 }
                 else if (hp != hq) rep.errors.push_back(D.where(r, hp ? "Встречный упор, %" : "Предпочтительный угол, °") + ": встречный упор задаётся парой — угол и упор");
             }
+            {   // группы наихудшего отказа (анализ последствий): имена через «;»
+                const std::string fg = D.cell(r, "Группа отказа");
+                if (!fg.empty()) {
+                    std::string norm; bool okg = true; size_t p = 0;
+                    while (p <= fg.size()) {
+                        size_t q = fg.find(';', p); if (q == std::string::npos) q = fg.size();
+                        std::string g = fg.substr(p, q - p); while (!g.empty() && g.front() == ' ') g.erase(g.begin()); while (!g.empty() && g.back() == ' ') g.pop_back();
+                        if (g.empty()) okg = false; else norm += (norm.empty() ? "" : ";") + g;
+                        p = q + 1;
+                    }
+                    if (!okg) rep.errors.push_back(D.where(r, "Группа отказа") + ": имена групп через «;», без пустых, например «ГРЩ-1; МО-1»");
+                    else j += ",\"failGroups\":\"" + esc(norm) + "\"";
+                }
+            }
             const std::string fs = D.cell(r, "Запретные сектора, °");
             if (!fs.empty()) { std::string sj; if (sectors(fs, sj)) j += ",\"forbidden\":" + sj; else rep.errors.push_back(D.where(r, "Запретные сектора, °") + ": формат «от-до; от-до», например «240-300; 60-120»"); }
             j += "}";

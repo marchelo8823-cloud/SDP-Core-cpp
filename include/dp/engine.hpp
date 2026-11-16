@@ -2,6 +2,7 @@
 #pragma once
 #include "dp/forecast.hpp"
 #include "dp/control.hpp"
+#include "dp/consequence.hpp"
 
 namespace dp {
 
@@ -55,6 +56,8 @@ public:
     void setThrusterEnabled(size_t i, bool on) { alloc_.setEnabled(i, on); }
     void setThrusterPreload(size_t i, double prefDeg, double pct) { alloc_.setPreload(i, prefDeg, pct); }
     void setMode(DpMode m) { ctl_.setMode(m, est_.state()); }
+    Consequence& consequence() { return ca_; }
+    const Consequence& consequence() const { return ca_; }
     DpMode mode() const { return ctl_.mode(); }
 
     EngineOutput step(double dt, const SensorFrame& fr) {
@@ -196,6 +199,17 @@ public:
         if (ok) co = ctl_.compute(dt, es, known, cap);
         o.ctl = co;
 
+        // --- анализ последствий отказа: в режиме «Позиция», опорная точка неподвижна (уставка достигнута), есть измерения положения, нет возврата
+        {
+            const bool inPos = m == DpMode::AutoPosition && ok;
+            const double dpos = std::hypot(co.refN - caRefN_, co.refE - caRefE_), dpsi = std::fabs(rad2deg(wrapPi(deg2rad(co.refPsiDeg - caRefPsi_))));
+            caRefN_ = co.refN; caRefE_ = co.refE; caRefPsi_ = co.refPsiDeg;
+            const bool still = dt > 0 && dpos / dt < 0.005 && dpsi / dt < 0.01;
+            std::vector<CaMsg> cm;
+            ca_.step(fr.time, dt, inPos, inPos && still && !es.refLost && !ctl_.returning(), co.tau, alloc_.thrusters(), cm);
+            for (const auto& x : cm) o.alarms.push_back({x.code, x.text, x.critical});
+        }
+
         // --- распределение
         if (m == DpMode::Standby || m == DpMode::Manual || !ok) {
             // команды не формируем: в ручном режиме движители управляются с поста, при потере данных удерживаем нулевую тягу
@@ -297,6 +311,7 @@ public:
 
 private:
     bool highLoad_ = false, dropLatched_ = false, wasReturning_ = false; double onT_ = 0, offT_ = 0;
+    Consequence ca_; double caRefN_ = 0, caRefE_ = 0, caRefPsi_ = 0;
     Forecaster fc_; Capability lastCap_; bool lastSat_ = false; double satT_ = 0, satClrT_ = 0; bool satOn_ = false;
     double hdgLim_ = 0; bool hWarn_ = false, hOut_ = false; double hWarnOn_ = 0, hWarnOff_ = 0, hOutOn_ = 0, hOutOff_ = 0;
     std::vector<double> mmT_;

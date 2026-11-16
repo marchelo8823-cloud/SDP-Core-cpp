@@ -175,6 +175,8 @@ public:
                "  law pid|lqr|mpc                     закон управления\n"
                "  gain high|low                       усиление контуров\n"
                "  cap [течение м/с]                   возможности удержания: предельный ветер по сценариям\n"
+               "  class 2|3|off                       анализ последствий отказа (по умолчанию выключен)\n"
+               "  ca [ветер м/с откуда ° [течение]]   анализ последствий сейчас; с погодой — по введённой погоде\n"
                "  status | help | quit\n";
     }
 
@@ -237,6 +239,36 @@ public:
         }
         else if (c == "set") { double n, e, h; if (is >> n >> e >> h) setSp({n, e, h}); else say("Формат: set <север> <восток> <курс>"); }
         else if (c == "move") { double dn, de, dh = 0; if (is >> dn >> de) { is >> dh; const Setpoint b = base(); setSp({b.n + dn, b.e + de, b.psiDeg + dh}); } else say("Формат: move <dС> <dВ> [dКурс]"); }
+        else if (c == "class") {
+            std::string w; is >> w;
+            say(eng.consequence().setClass(w == "2" ? 2 : w == "3" ? 3 : w == "off" ? 0 : -1));
+        }
+        else if (c == "ca") {
+            const Consequence& ca = eng.consequence();
+            double wind; bool hyp = false;
+            if (is >> wind) {   // РС 8.9.7: наихудший отказ при введённой погоде
+                double from = 0, cur = 0; is >> from; is >> cur; hyp = true;
+                for (const auto& g : Consequence::makeGroups(eng.allocator().thrusters(), nullptr)) {
+                    HypotCase h; h.failed = g.ids; h.windMS = clampd(wind, 0, 60); h.windFromDeg = from; h.currentMS = clampd(cur, 0, 5);
+                    AppCfg cf = sh_->cfg; cf.thrusters = eng.allocator().thrusters();
+                    const DriftResult r = capHypot(cf, h);
+                    char b[120]; std::snprintf(b, sizeof b, "), ветер %.1f м/с с %.0f° от носа, течение %.1f м/с: ", h.windMS, from, h.currentMS);
+                    say("Отказ «" + g.name + "» (" + Consequence::join(g.ids) + b + r.note);
+                }
+            }
+            if (!hyp) {
+                if (ca.dpClass() == 0) say("Анализ последствий выключен: class 2 или class 3. Сейчас — расчёт по текущему усилию регулятора:");
+                else if (ca.ran()) { char b[160]; std::snprintf(b, sizeof b, "Анализ последствий: класс %d, последний расчёт %.0f с назад:", ca.dpClass(), clock() - ca.lastRunT()); say(b); }
+                else say("Анализ последствий: класс " + std::to_string(ca.dpClass()) + ", расчёта ещё не было (нужен режим «Позиция» и 60 с при неизменных точке и курсе). Сейчас — по текущему усилию:");
+                const auto gs = ca.ran() && ca.dpClass() ? ca.groups() : ca.evaluate(out_.ctl.tau, eng.allocator().thrusters());
+                for (const auto& g : gs) {
+                    char b[300]; std::snprintf(b, sizeof b, "  отказ «%s» (%s): %s — сила %.0f %%, момент %.0f %%%s", g.name.c_str(), Consequence::join(g.ids).c_str(),
+                                               g.holds ? "удержится" : "НЕ ХВАТИТ упора", g.forcePct, g.momentPct, g.alarm ? ", тревога" : "");
+                    say(b);
+                }
+                if (gs.empty()) say("  нет движителей в работе");
+            }
+        }
         else if (c == "hdg") { double h; if (is >> h) { const Setpoint b = base(); setSp({b.n, b.e, h}); } else say("Формат: hdg <курс>"); }
         else if (c == "pivot") {
             double px, py;

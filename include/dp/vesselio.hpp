@@ -43,7 +43,7 @@ inline void readThruster(json::Obj& o, ThrusterCfg& t) {
     t.timeConstS = o.num("timeConstS", 2.0); t.rateFracPerS = o.num("rateFracPerS", 0.25); t.azRateDegS = o.num("azRateDegS", 10.0);
     t.fbDiffPct = o.num("fbDiffPct", 25.0); t.fbDiffAngleDeg = o.num("fbDiffAngleDeg", 30.0); t.fbDiffDelayS = o.num("fbDiffDelayS", 30.0);
     t.weight = o.num("weight", 1.0); t.powerMaxKW = o.num("powerMaxKW", 0.0);
-    t.limitPct = o.num("limitPct", 100.0); t.idlePct = o.num("idlePct", 0.0); t.fadeKn = o.num("fadeKn", 0.0); t.fadeFloorPct = o.num("fadeFloorPct", 50.0); t.bus = o.integer("bus", -1); t.parkDeg = o.num("parkDeg", 1e9);
+    t.limitPct = o.num("limitPct", 100.0); t.idlePct = o.num("idlePct", 0.0); t.fadeKn = o.num("fadeKn", 0.0); t.fadeFloorPct = o.num("fadeFloorPct", 50.0); t.bus = o.integer("bus", -1); t.parkDeg = o.num("parkDeg", 1e9); t.failGroups = o.str("failGroups", "");
     t.prefDeg = o.num("prefDeg", 1e9); t.preloadPct = o.num("preloadPct", 0.0); t.azDeadDeg = o.num("azDeadDeg", 0.0); t.pctDeadPct = o.num("pctDeadPct", 0.0); t.hardCoreDeg = o.num("hardCoreDeg", 360.0);
     for (auto& pr : o.numLists("curve")) { if (pr.size() == 3) t.curve.push_back({pr[0], pr[1], pr[2]}); else o.error("точка кривой задаётся тройкой [обороты %, упор %, мощность %]"); }
     for (auto& pr : o.numLists("forbidden")) { if (pr.size() == 2) t.forbidden.push_back({pr[0], pr[1]}); else o.error("запретный сектор задаётся парой [от, до]"); }
@@ -102,6 +102,7 @@ inline std::string writeThruster(const ThrusterCfg& t) {
     if (t.azDeadDeg != 0.0) s += ",\"azDeadDeg\":" + num(t.azDeadDeg);
     if (t.pctDeadPct != 0.0) s += ",\"pctDeadPct\":" + num(t.pctDeadPct);
     if (t.bus >= 0) s += ",\"bus\":" + std::to_string(t.bus);
+    if (!t.failGroups.empty()) s += ",\"failGroups\":\"" + vio::esc(t.failGroups) + "\"";
     if (t.limitPct != 100.0) s += ",\"limitPct\":" + num(t.limitPct);
     if (t.idlePct != 0.0) s += ",\"idlePct\":" + num(t.idlePct);
     if (t.fadeKn != 0.0) s += ",\"fadeKn\":" + num(t.fadeKn) + ",\"fadeFloorPct\":" + num(t.fadeFloorPct);
