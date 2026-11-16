@@ -157,10 +157,23 @@ int main(int argc, char** argv) {
       CHECK(d && c.mode() == DpMode::AutoPosition, "во время возврата снова потеря: POS_DROPOUT, режим не снят"); }
     log.clear();
     c.command("sim reset");
-    { const double t1 = c.clock(); double load = 0;
-      while (c.clock() < t1 + 300) { c.cycle(); const auto& o = c.out(); if (has("POS_RETURN")) load = std::max({load, std::fabs(o.ctl.tau.X) / std::max(1.0, o.cap.X), std::fabs(o.ctl.tau.Y) / std::max(1.0, o.cap.Y)}); }
-      std::printf("   усилие при повторном возврате до %.0f %% возможностей\n", 100 * load);
-      CHECK(load < 0.95 && said(log, "Возврат в заданную точку завершён"), "после повторной потери возврат не полным упором (торможение дрейфа — до 90 %) и завершается"); }
+    // Возврат делится на две части (решение владельца 16.11.2026): сначала торможение дрейфа, набранного за время потери
+    // (до полного упора, но больше 80 % — не дольше 10 с), затем сам возврат — не полным упором (меньше 80 %). Торможение кончается,
+    // когда дрейф погашен: скорость судна опустилась ниже предела возврата 0,2 м/с и прошла минимум (судно пошло к точке).
+    { const double t1 = c.clock(); double brakeLoad = 0, retLoad = 0, highS = 0, brakeEnd = -1, vMin = 1e9;
+      while (c.clock() < t1 + 300) {
+          c.cycle(); const auto& o = c.out(); const auto& s = c.sim()->truth();
+          if (!has("POS_RETURN")) continue;
+          const double l = std::max(std::fabs(o.ctl.tau.X) / std::max(1.0, o.cap.X), std::fabs(o.ctl.tau.Y) / std::max(1.0, o.cap.Y));
+          const double v = std::hypot(s.u, s.v);
+          if (c.clock() - t1 > 3.0) vMin = std::min(vMin, v);
+          if (brakeEnd < 0 && vMin < 0.2 && v > vMin + 0.02) brakeEnd = c.clock() - t1;   // скорость прошла минимум (0,02 м/с — против волн)
+          if (brakeEnd < 0) { brakeLoad = std::max(brakeLoad, l); if (l > 0.8) highS += c.dt(); }
+          else retLoad = std::max(retLoad, l);
+      }
+      std::printf("   торможение дрейфа: до %.0f %% возможностей, больше 80 %% — %.1f с, закончилось через %.0f с; затем возврат до %.0f %%\n", 100 * brakeLoad, highS, brakeEnd, 100 * retLoad);
+      CHECK(brakeEnd > 0 && brakeEnd < 60 && highS <= 10.0, "после повторной потери: торможение дрейфа больше 80 % упора не дольше 10 с");
+      CHECK(retLoad < 0.8 && said(log, "Возврат в заданную точку завершён"), "сам возврат — не полным упором (меньше 80 %) и завершается"); }
     h = hold(c, c.clock() + 10, c.clock() + 120);
     CHECK(h.maxPos < 3.0, "удержание снова в пределах 3 м");
 
