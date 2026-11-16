@@ -19,7 +19,7 @@
    - Restrict deletions; Block force pushes;
    - Require a pull request before merging, **Required approvals: 0** (свои изменения в GitHub одобрить нельзя: при 1 владелец заблокирует сам себя);
    - Require status checks to pass: `build` из «Сборка и тесты».
-   - ⚠ В закрытом репозитории на тарифе Free правила веток не действуют (GitHub: «Upgrade to GitHub Pro or make this repository public»). Без Pro основную ветку защищает только то, что у агентов нет права записи, а принимает изменения владелец.
+   - ⚠ В закрытом репозитории на тарифе Free правила веток не действуют (GitHub: «Upgrade to GitHub Pro or make this repository public»). Без Pro основную ветку защищает то, что изменения принимает только владелец. ⚠ С 16.11.2026 у запланированной задачи агентов есть право записи (через учётную запись владельца): запись в основную ветку ей запрещена только её правилами (текст задачи, `.github/agents/common.md`), технически — нет. Надёжная защита — тариф Pro с правилом ветки или отдельная учётная запись агентов с правом записи только в `agent/*`; решение владельца.
 3. **Ключ API:** Settings → Secrets and variables → Actions → New repository secret, имя `ANTHROPIC_API_KEY`. Значение никому не пересылать.
 4. **Модель агентов (необязательно):** там же, вкладка Variables, `SDP_AGENT_MODEL`.
 5. **Ограничить Actions:** Settings → Actions → General → Allow … actions: разрешить только действия GitHub и `anthropics/claude-code-action`; Fork pull request workflows — Require approval for all outside collaborators.
