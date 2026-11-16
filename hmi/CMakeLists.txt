@@ -35,4 +35,20 @@ if(NOT WIN32)
            --run 20 --cmd "thr_take all" --cmd position --run 30 --press "Класс 2" --expect-ca 2
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
   set_tests_properties(hmi_ca PROPERTIES TIMEOUT 120)
+  # шапка состояния говорит правду об отказах (замечания операторов и агентов, 17.11.2026)
+  set(S ${CMAKE_SOURCE_DIR}/data/Данные_судна_пример.xlsx)
+  set(I ${CMAKE_SOURCE_DIR}/tests/scenarios/имитатор_быстро.xlsx)
+  set(GY --cmd "sim off GYRO1" --cmd "sim off GYRO2" --cmd "sim off GYRO3")
+  set(PS --cmd "sim off GNSS1" --cmd "sim off GNSS2" --cmd "sim off LASER")
+  foreach(case "hold|--run;1|УДЕРЖАНИЕ ПОЗИЦИИ" "hdgdr|${GY};--run;2.5|СЧИСЛЕНИЕ КУРСА" "hdglost|${GY};--run;8|УПОР СНЯТ — НЕТ КУРСА"
+               "posdr|${PS};--run;60|СЧИСЛЕНИЕ ПОЛОЖЕНИЯ" "return|${PS};--run;120;--cmd;sim reset;--run;15|ВОЗВРАТ В ТОЧКУ")
+    string(REPLACE "|" ";" parts "${case}")
+    list(GET parts 0 nm)
+    list(GET parts -1 lab)
+    list(REMOVE_AT parts 0 -1)
+    add_test(NAME hmi_state_${nm} COMMAND ${CMAKE_COMMAND} -E env QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
+             $<TARGET_FILE:sdp_hmi> --ship ${S} --sim ${I} --run 20 --cmd "thr_take all" --cmd position --run 60 ${parts} --expect-state "${lab}"
+             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+    set_tests_properties(hmi_state_${nm} PROPERTIES TIMEOUT 180)
+  endforeach()
 endif()

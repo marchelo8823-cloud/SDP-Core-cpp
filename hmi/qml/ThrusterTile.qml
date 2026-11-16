@@ -1,4 +1,5 @@
-// Плитка движителя: шкала угла (у поворотных) — команда пунктиром, факт сплошной; полоса упора; числа команды и факта.
+// Плитка движителя: шкала угла (у поворотных) — задание пунктиром, факт сплошной; полоса упора; числа задания и факта.
+// cut — упор снят ядром (нет курса): плитка приглушена, состояние «упор снят».
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -7,8 +8,10 @@ import "."
 Rectangle {
     id: tile
     property var t: ({})
+    property bool cut: false
+    opacity: cut && t.taken ? 0.72 : 1
     color: Theme.panel2
-    radius: 3
+    radius: 6
     border.color: t.failed ? Theme.alarm : (t.taken ? Theme.line : Theme.panel2)
     border.width: t.failed ? 2 : 1
     implicitHeight: 196
@@ -21,9 +24,10 @@ Rectangle {
             Label { text: t.type || ""; color: Theme.dim; font.pixelSize: Theme.fsSmall; Layout.fillWidth: true }
             Rectangle {
                 radius: 2; implicitWidth: st.implicitWidth + 10; implicitHeight: st.implicitHeight + 4
-                color: t.failed ? Theme.alarm : t.taken ? Qt.darker(Theme.ok, 1.6) : Theme.line
-                Label { id: st; anchors.centerIn: parent; font.pixelSize: 12; color: Theme.text
-                        text: t.failed ? "ОТКАЗ" : !t.enabled ? "вне работы" : t.taken ? "в управлении" : "не взят" }
+                color: t.failed ? Theme.alarm : t.fbLost ? Theme.tint(Theme.warn, 0.22) : cut && t.taken ? Theme.tint(Theme.alarm, 0.22) : t.taken ? Theme.tint(Theme.ok, 0.18) : Theme.line
+                Label { id: st; anchors.centerIn: parent; font.pixelSize: 12; font.bold: true
+                        color: t.failed ? Theme.bg : t.fbLost ? Theme.warn : cut && t.taken ? Theme.alarm : t.taken ? Theme.ok : Theme.text
+                        text: t.failed ? "ОТКАЗ" : t.fbLost ? "нет обратной связи" : !t.enabled ? "вне работы" : cut && t.taken ? "упор снят" : t.taken ? "в управлении" : "не взят" }
             }
         }
         RowLayout {
@@ -73,11 +77,11 @@ Rectangle {
                 columns: 2; rowSpacing: 2; columnSpacing: 8; Layout.fillWidth: true
                 Label { text: "упор"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
                 Label { text: Theme.num(t.thrustKN, 0) + " кН"; color: Theme.text; font.pixelSize: Theme.fs; font.family: Theme.mono }
-                Label { text: "команда"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+                Label { text: "задание"; color: Theme.accent; font.pixelSize: Theme.fsSmall }
                 Label { text: Theme.num(t.cmdPct, 0) + " %"; color: Theme.accent; font.pixelSize: Theme.fs; font.family: Theme.mono }
-                Label { text: "факт"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+                Label { text: "факт"; color: Theme.fb; font.pixelSize: Theme.fsSmall }
                 Label { text: t.fb ? Theme.num(t.fbPct, 0) + " %" : "—"; color: Theme.fb; font.pixelSize: Theme.fs; font.family: Theme.mono }
-                Label { text: "угол"; color: Theme.dim; font.pixelSize: Theme.fsSmall; visible: t.azimuth === true }
+                Label { text: "угол зад. / факт"; color: Theme.dim; font.pixelSize: Theme.fsSmall; visible: t.azimuth === true }
                 Label { visible: t.azimuth === true; font.pixelSize: Theme.fs; font.family: Theme.mono; color: Theme.text
                         text: Theme.num(t.cmdAng, 0) + "° / " + (t.fb ? Theme.num(t.fbAng, 0) + "°" : "—") }
             }

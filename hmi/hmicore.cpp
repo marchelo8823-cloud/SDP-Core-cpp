@@ -19,7 +19,7 @@ std::string HmiCore::localPath(const QString& p) {
 void HmiCore::say(const std::string& m) {
     const QString t = QString::fromStdString(m);
     for (const QString& line : t.split('\n', Qt::SkipEmptyParts))
-        log_.prepend(QString("%1  %2").arg(core_.clock(), 7, 'f', 0).arg(line));
+        log_.prepend(QTime::currentTime().toString("HH:mm:ss") + "  " + line);
     while (log_.size() > 300) log_.removeLast();
     emit logChanged();
 }
@@ -30,7 +30,7 @@ void HmiCore::command(const QString& line) {
     say(("> " + l).toStdString());
     const bool hadShip = core_.hasShip();
     core_.command(l.toStdString());
-    if (core_.hasShip() != hadShip || l.startsWith("ship load")) { trail_.clear(); emit shipChanged(); }
+    if (core_.hasShip() != hadShip || l.startsWith("ship load")) { trail_.clear(); loadHist_.clear(); emit shipChanged(); }
     refresh();
 }
 void HmiCore::loadShip(const QString& p) { command("ship load " + QString::fromStdString(localPath(p))); }
@@ -49,10 +49,12 @@ void HmiCore::runFor(double seconds) {
     while (core_.clock() < until) {
         core_.cycle();
         const EngineOutput& o = core_.out();
-        if (core_.hasShip() && o.est.posValid && core_.clock() - lastTrail_ >= 2.0) { trail_.push_back({o.est.n, o.est.e}); lastTrail_ = core_.clock(); if (trail_.size() > 450) trail_.pop_front(); }
+        if (core_.hasShip() && o.est.posValid && core_.clock() - lastTrail_ >= 2.0) { trail_.push_back({o.est.n, o.est.e}); lastTrail_ = core_.clock(); if (trail_.size() > 450) trail_.pop_front(); sample(o.alloc.utilization); }
     }
     refresh();
 }
+
+void HmiCore::sample(double load) { loadHist_.push_back(load); while (loadHist_.size() > 150) loadHist_.pop_front(); }
 
 void HmiCore::refresh() {
     const EngineOutput& o = core_.out();
@@ -84,6 +86,25 @@ void HmiCore::refresh() {
     m["roll"] = rad2deg(es.roll); m["pitch"] = rad2deg(es.pitch); m["heave"] = es.heave;
     m["waveHs"] = es.wave.valid ? es.wave.hs : -1.0;
     if (core_.simRunning()) { auto* sim = core_.sim(); const auto& tr = sim->truth(); m["trueN"] = tr.n; m["trueE"] = tr.e; }
+    // потеря положения и курса: сколько секунд нет измерений, вероятный уход, сколько осталось до снятия упора
+    m["refLostS"] = es.refLostS; m["posDropout"] = es.posDropout; m["drDriftM"] = es.drDriftM;
+    m["hdgLostS"] = es.hdgLostS; m["hdgMeasured"] = es.hdgMeasured;
+    m["active"] = st == CoreState::Active;
+    // отклонение от точки оператора (а не от движущейся опорной точки возврата): та же точка судна, что держит регулятор
+    m["opValid"] = false; m["returning"] = false; m["hdgDrS"] = 2.0; m["hdgTimeoutS"] = 2.0;
+    if (DpEngine* eng = core_.engine()) {
+        m["hdgDrS"] = eng->estimator().cfg().hdgDeadReckonS; m["hdgTimeoutS"] = eng->estimator().cfg().hdgTimeoutS;
+        const auto& ctl = eng->controller();
+        m["returning"] = ctl.returning();
+        if (core_.hasShip() && st == CoreState::Active) {
+            const Setpoint sp = ctl.setpoint(), hp = ctl.holdFromCrp(es.n, es.e, rad2deg(es.psi));
+            const double dn = hp.n - sp.n, de = hp.e - sp.e, ps = es.psi;
+            m["opValid"] = true; m["spN"] = sp.n; m["spE"] = sp.e; m["spHdg"] = std::fmod(sp.psiDeg + 360.0, 360.0);
+            m["opErr"] = std::hypot(dn, de);
+            m["opAlong"] = dn * std::cos(ps) + de * std::sin(ps);     // + — судно впереди точки
+            m["opCross"] = -dn * std::sin(ps) + de * std::cos(ps);    // + — судно правее точки
+        }
+    }
     // анализ последствий отказа: класс, был ли расчёт, запас по группам наихудшего отказа
     if (DpEngine* eng = core_.engine()) {
         const Consequence& ca = eng->consequence();
@@ -114,6 +135,7 @@ void HmiCore::refresh() {
             if (core_.simRunning() && i < core_.sim()->thrusters().size()) {
                 const auto& ts = core_.sim()->thrusters()[i]; fbPct = ts.pct(); fbAng = ts.angleDeg(); fb = true; failed = ts.failed() || !ts.cfg().enabled;
             }
+            x["fbLost"] = core_.engine() && core_.engine()->thrusterFbLost(i);   // THR_FB_LOST: выведен из распределения
             x["cmdPct"] = cmdPct; x["cmdAng"] = std::fmod(cmdAng + 360.0, 360.0);
             x["fbPct"] = fbPct; x["fbAng"] = std::fmod(fbAng + 360.0, 360.0); x["fb"] = fb; x["failed"] = failed;
             x["thrustKN"] = (fbPct >= 0 ? fbPct / 100.0 * t.maxForward : fbPct / 100.0 * t.maxReverse) / 1000.0;
@@ -138,13 +160,17 @@ void HmiCore::refresh() {
         QVariantMap x; const QString code = QString::fromStdString(a.code);
         x["code"] = code; x["text"] = QString::fromStdString(a.text); x["level"] = a.level();   // 1 — аварийная, 2 — предупреждение, 3 — сообщение
         x["acked"] = acked_.contains(code); now.insert(code);
+        if (!alarmTime_.contains(code)) alarmTime_.insert(code, QTime::currentTime().toString("HH:mm:ss"));
+        x["time"] = alarmTime_.value(code);
         al.push_back(x);
     }
-    for (auto it = acked_.begin(); it != acked_.end();) { if (!now.contains(*it)) it = acked_.erase(it); else ++it; }   // снятая тревога при повторе снова «новая»
+    for (auto it = acked_.begin(); it != acked_.end();) { if (!now.contains(*it)) it = acked_.erase(it); else ++it; }
+    for (auto it = alarmTime_.begin(); it != alarmTime_.end();) { if (!now.contains(it.key())) it = alarmTime_.erase(it); else ++it; }   // снятая тревога при повторе снова «новая»
     std::stable_sort(al.begin(), al.end(), [](const QVariant& a, const QVariant& b) { return a.toMap()["level"].toInt() < b.toMap()["level"].toInt(); });
     alm_ = al;
 
-    if (core_.hasShip() && es.posValid && core_.clock() - lastTrail_ >= 2.0) { trail_.push_back({es.n, es.e}); lastTrail_ = core_.clock(); if (trail_.size() > 450) trail_.pop_front(); }
+    if (core_.hasShip() && es.posValid && core_.clock() - lastTrail_ >= 2.0) { trail_.push_back({es.n, es.e}); lastTrail_ = core_.clock(); if (trail_.size() > 450) trail_.pop_front(); sample(o.alloc.utilization); }
+    { QVariantList lh; for (double v : loadHist_) lh.push_back(v); s_["loadHist"] = lh; }
     QVariantList tk; for (const auto& p : trail_) { tk.push_back(p.first); tk.push_back(p.second); }
     trk_ = tk;
 
