@@ -38,7 +38,9 @@ public:
         for (const auto& t : alloc_.thrusters()) {
             ThrusterCmd c; c.id = t.id; c.angleDeg = t.type == ThrusterType::Azimuth ? 0.0 : rad2deg(thrusterBaseAngle(t));
             last_.push_back(c);
+            want_.push_back(t.enabled ? 1 : 0);
         }
+        fbLostT_.assign(last_.size(), 0.0); fbSeen_.assign(last_.size(), 0); fbOut_.assign(last_.size(), 0);
     }
 
     Controller& controller() { return ctl_; }
@@ -52,7 +54,9 @@ public:
     // Предел курса, ° (0 — выключен): предупреждение при 80 %, аларм при выходе за предел. Только когда курс удерживается.
     void setHdgLimit(double d) { hdgLim_ = d > 0 ? d : 0; }
     double hdgLimit() const { return hdgLim_; }
-    void setThrusterEnabled(size_t i, bool on) { alloc_.setEnabled(i, on); }
+    // Движитель под управлением ядра (решение оператора). Движитель без обратной связи ядро временно выводит из распределения само (fbOut_).
+    void setThrusterEnabled(size_t i, bool on) { if (i < want_.size()) want_[i] = on ? 1 : 0; alloc_.setEnabled(i, on && !(i < fbOut_.size() && fbOut_[i])); }
+    bool thrusterFbLost(size_t i) const { return i < fbOut_.size() && fbOut_[i]; }
     void setThrusterPreload(size_t i, double prefDeg, double pct) { alloc_.setPreload(i, prefDeg, pct); }
     void setMode(DpMode m) { ctl_.setMode(m, est_.state()); }
     DpMode mode() const { return ctl_.mode(); }
@@ -71,6 +75,23 @@ public:
         const double thrustScale = thrustScaleForPower(th, ps);
         o.powerScale = thrustScale;
 
+        // --- потеря обратной связи движителя: у движителя, от которого обратная связь приходила (или ожидается — есть запись в кадре),
+        // нет достоверных данных дольше 2 с → тревога, движитель выводится из распределения упоров (команды ему 0), его упор в оценке — 0.
+        // Возвращается в распределение сам, когда обратная связь снова достоверна.
+        for (size_t i = 0; i < th.size() && i < want_.size(); ++i) {
+            bool entry = false, valid = false;
+            for (const auto& f : fr.fb) if (f.id == th[i].id) { entry = true; valid = valid || f.valid; }
+            if (valid) {
+                fbSeen_[i] = 1; fbLostT_[i] = 0;
+                if (fbOut_[i]) { fbOut_[i] = 0; alloc_.setEnabled(i, want_[i]); o.infos.push_back("Движитель " + th[i].id + ": обратная связь восстановлена" + (want_[i] ? " — снова в распределении упоров" : "")); }
+            } else if (fbSeen_[i] || entry) {
+                fbLostT_[i] += dt;
+                if (!fbOut_[i] && fbLostT_[i] >= 2.0) { fbOut_[i] = 1; alloc_.setEnabled(i, false); if (want_[i]) o.infos.push_back("Движитель " + th[i].id + ": нет обратной связи — выведен из распределения упоров"); }
+            }
+        }
+        for (size_t i = 0; i < th.size() && i < want_.size(); ++i)
+            if (fbOut_[i] && want_[i]) o.alarms.push_back({"THR_FB_LOST_" + th[i].id, "Движитель " + th[i].id + ": нет обратной связи — выведен из распределения упоров, остальные берут его долю", true, 1});
+
         // --- фактические углы и упоры по обратной связи
         std::vector<double> actAngle(th.size(), 0.0);
         Wrench thrust{};
@@ -79,7 +100,7 @@ public:
             double pct = last_[i].pct, ang = last_[i].angleDeg;   // при отсутствии обратной связи — по последней команде
             for (const auto& f : fr.fb) if (f.id == t.id && f.valid) { pct = f.pct; ang = f.angleDeg; }
             actAngle[i] = ang;
-            if (!t.enabled) continue;
+            if (!t.enabled) continue;   // выведенный по потере обратной связи — тоже: его упор неизвестен, в оценку не идёт
             const double N = pct >= 0 ? pct / 100.0 * t.maxForward : pct / 100.0 * t.maxReverse;
             const double a = t.type == ThrusterType::Azimuth ? deg2rad(ang) : thrusterBaseAngle(t);
             const Wrench w = thrusterWrench(t, N, a);
@@ -297,6 +318,7 @@ public:
 
 private:
     bool highLoad_ = false, dropLatched_ = false, wasReturning_ = false; double onT_ = 0, offT_ = 0;
+    std::vector<char> want_, fbSeen_, fbOut_; std::vector<double> fbLostT_;
     Forecaster fc_; Capability lastCap_; bool lastSat_ = false; double satT_ = 0, satClrT_ = 0; bool satOn_ = false;
     double hdgLim_ = 0; bool hWarn_ = false, hOut_ = false; double hWarnOn_ = 0, hWarnOff_ = 0, hOutOn_ = 0, hOutOff_ = 0;
     std::vector<double> mmT_;
