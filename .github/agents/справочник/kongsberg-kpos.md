@@ -1,27 +1,48 @@
 # Kongsberg K-Pos
 
-Метки — см. `README.md`.
+Метки — см. `README.md`. Основной источник ✔ — `библиотека/kongsberg/K-Pos_DP_Operator_Manual_rel7.0_2007.pdf` (K-Pos DP (OS), выпуск 7.0, 301027/D, июль 2007; страницы — по нумерации документа, в PDF на 1 больше). На русском — `Kongsberg_SDP-21_Руководство_оператора_рус.pdf` (SDP 21, предшественник K-Pos; русские названия разделов с английскими в скобках — удобно для терминов). Отказы и пороги — `отказы-сравнение.md`.
 
 ## Что это
-- Семейство СДП Kongsberg Maritime: K-Pos DP (одиночная, двойная, тройная — для классов DP1/DP2/DP3). Обозначения DP-11/12, DP-21/22, DP-31/32 ⚠ (первая цифра — класс, вторая — число контроллеров/постов; проверить по документации).
-- Предшественники: SDP ⚠, cPos — снят с продажи, поддерживается ✔ (kongsberg.com, cPos-DP).
-- Состав ✔ (брошюра K-Pos): посты оператора (DP Operator Stations), контроллер (DP Controller), джойстики, в том числе наружные; управление движителями — K-Thrust.
+- Семейство СДП Kongsberg Maritime для классов DP1–DP3; ⚠ обозначения DP-11/12, DP-21/22, DP-31/32 в библиотечном руководстве не проверялись.
+- Предшественники: SDP (руководство SDP 21 в библиотеке ✔), cPos — снят с продажи ✔ (kongsberg.com).
+- Пост оператора: экран, панель с кнопками, трекбол, трёхосевой джойстик, штурвал курса (Heading wheel) ✔ (разд. 2, с. 29–35; фото — `библиотека/снимки_kpos/`).
+- Резервирование: контроллеры (Controller process stations), передача управления между постами — Command transfer, Command Control ✔ (6.3–6.4, с. 109–118; 7.2, с. 120).
 
-## Режимы
-- ✔ Auto Heading: Present Heading, Change Heading, Minimum Power Heading.
-- ✔ Joystick — трёхосевая рукоятка.
-- ✔ Green Control Follow Target — часть GreenDP.
-- ⚠ Auto Position, Auto Track, Follow Target / Follow Sub, ROV Follow, Weather Vane, Auto Area/Radius — по учебным материалам; проверить по руководству.
+## Режимы ✔ (разд. 10, с. 178–186)
+- **Standby** — ожидание и сброс, команд движителям нет; режим при включении. Отсюда — Joystick или тренажёр. В Standby включаются гирокомпасы, датчики ветра, VRS, движители.
+- **Joystick** — три оси рукояткой; ориентация осей зависит от того, куда смотрит оператор.
+- **Смешанные (Mixed joystick/auto)**: кнопки YAW (автокурс), SURGE+SWAY (автоположение, курс рукояткой), YAW+SURGE или YAW+SWAY (автостабилизация, одна ось рукояткой). Все три оси — автоматически Auto Position. Уставка при включении оси — текущее значение.
+- **Auto Position** — нужен минимум один гирокомпас и одна система положения (сколько на деле — по классу). Уставки — текущие оценочные положение и курс. 5 мин (тяжёлые условия — 15 мин) не менять уставки.
+- Кнопки режимов нажимаются **дважды**.
+- Режимы регулятора (3.9, с. 70–71): **High Precision** (по умолчанию), **Relaxed** (внутри радиуса усиление очень мало и растёт к границе; радиус — не граница тревоги), **Green** (внутренний и внешний радиус; включать после ~15 мин в Auto Position). Уровни усиления high/medium/low.
+- Кроме того ✔ (оглавление): Quick model update (3.10), центр вращения для автоматики и джойстика (3.11, 4.3), тренажёр (17).
+- ⚠ Auto Track, Follow Target, ROV Follow — в этом руководстве (DP OS 7.0) отдельными разделами не описаны; Green Control Follow Target ✔ — в брошюре новых версий.
 
-## Что привычно оператору K-Pos (для агента 7, профиль `kongsberg`) — ⚠ всё по памяти
-- Экраны: положение (Position plot), движители (Thrusters), опорные системы (Position reference / Heading reference), датчики (Sensors), тревоги (Alarm list), тренды.
-- Consequence Analysis — постоянная, с тревогой «не удержимся при худшем отказе».
-- Capability plot онлайн; отдельно — StatCap ✔ (программа расчёта возможностей, kongsberg.com).
-- GreenDP — режим экономии топлива с подвижными границами удержания ✔ (название), ⚠ (как работает).
-- Передача управления между постами — запрос и подтверждение.
+## Экраны ✔ (разд. 19, с. 274 и далее)
+Deviation, Diesels, General, Joystick, LTW, Numeric, Performance area, Posplot, Power, Power Consumption, Refsys, Sensors, Thruster main, Trends и др. Палитры Bright Day, Day, Dusk Day, Night (3.7, с. 66–67).
 
-## Источники
-- K-Pos, брошюра: https://pdf.nauticexpo.com/pdf/kongsberg-maritime/k-pos-dynamic-positioning-optimizing-complex-vessel-operations/31233-89788.html
+## Сообщения ✔ (разд. 5, с. 88–105)
+Четыре уровня (Emergency, Alarm, Warning, Information) с цветами; строка сообщений и Event List; пояснения к каждому сообщению (5.9); «Operator advice messages» (5.10). Подробно — `отказы-сравнение.md`, разд. 5.
+
+## Движители ✔ (разд. 13, с. 203–222)
+- Thruster Allocation, Allocation Settings, рули (Rudder/Nozzle control).
+- **Thruster biasing** (13.6–13.7, с. 211–220): группы из 2–3 азимутальных движителей работают навстречу, итог — ноль; до 6 групп. Параметры: Bias (наименьшая сила), Turn factor (до какой силы работают навстречу, потом один разворачивается), Angle factor, Spin, Inwards (навстречу или в разные стороны). Встречный упор уменьшается с ростом общего запроса. Зачем: движитель не даёт нулевого упора, нужна большая нагрузка, штиль, меньше разворотов колонок, лучше демпфирование. Сравнить с нашим «Встречный упор, %».
+
+## Электростанция ✔ (разд. 14, с. 223–225)
+Контроль мощности, предотвращение обесточивания (blackout prevention). У нас нет.
+
+## Анализ последствий ✔ (разд. 18, с. 271–273)
+См. `отказы-сравнение.md`, разд. 7.
+
+## Для агента 7 (профиль `kongsberg`)
+Оператор K-Pos привык: двойное нажатие режимов, смешанные режимы по осям, Event List с пояснением к каждому сообщению, Refsys view с кругами СКО и пределом медианы, Posplot, Relaxed/Green, Consequence analysis с текстом «что будет критично». Ссылайся на раздел и страницу руководства.
+
+## Ещё в библиотеке
+- `AOS_Victory_DP_Operations_Manual.pdf` — судовое руководство по ДП (как судно реально работает на K-Pos DP-2), `AOS_Victory_FMEA.pdf`, ежегодные испытания 2016 (`AOS_Victory_9701762_AS/AT.pdf`), диаграмма возможностей.
+- `KHW019960_Sensors_and_PRS.pdf` — датчики и системы положения (курс обслуживания).
+- `K-Pos_DPM_Product_Description.pdf` — ДП совместно с якорной стоянкой (DPM).
+
+## Открытые источники
+- Брошюра K-Pos: https://pdf.nauticexpo.com/pdf/kongsberg-maritime/k-pos-dynamic-positioning-optimizing-complex-vessel-operations/31233-89788.html
 - cPos: https://kongsberg.com/maritime/products/positioning-and-manoeuvring/dynamic-positioning/cPos-DP
 - StatCap: https://www.kongsberg.com/maritime/products/positioning-and-manoeuvring/dynamic-positioning/statcap-web
-- Сертификат типа DNV на систему управления ДП: https://www.kongsberg.com/globalassets/maritime/documents/certificates/product/dynamic-positioning-control-system/det-norske-veritas-dnv/taa000004c-revision7.pdf
