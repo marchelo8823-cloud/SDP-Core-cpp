@@ -68,7 +68,7 @@ Rectangle {
                 if (fill) { g.fillStyle = col; g.fill() } else { g.strokeStyle = col; g.lineWidth = 2; g.stroke() }
             }
             if (s.hdgValid) tri(s.hdg, R, R - 16, 2.6, true, s.hdgDR ? Theme.warn : Theme.text)        // курс судна
-            if (s.active) tri(s.refHdg, R + 22, R + 36, 2.2, false, Theme.accent)                     // заданный курс
+            if (s.active) tri(s.opValid ? s.spHdg : s.refHdg, R + 22, R + 36, 2.2, false, Theme.accent)   // заданный курс оператора (как в панели «Курс»)
             // след
             const t = root.track
             if (t.length >= 4) {

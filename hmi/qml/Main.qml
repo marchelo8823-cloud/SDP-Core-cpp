@@ -66,12 +66,14 @@ ApplicationWindow {
     readonly property bool active: s.stateCode === 3
     readonly property bool hdgCut: active && s.hdgValid === false                 // курса нет, упор снят ядром
     readonly property bool hdgDr: active && s.hdgDR === true && !hdgCut
-    readonly property bool posDr: active && s.modeCode === 4 && s.posDR === true
+    readonly property bool posCut: active && s.modeCode === 4 && s.posValid === false        // POS_LOST: счисление превысило допустимое время, упор снят
+    readonly property bool posDr: active && s.modeCode === 4 && s.posDR === true && s.posValid !== false
     readonly property var st: {
         if (!s.hasShip) return { label: "НЕТ СУДНА", sub: "Загрузите книгу данных судна", c: Theme.dim }
         if (s.stateCode === 1) return { label: "ЖДУ ДАТЧИКИ", sub: "Нужны курс и положение от датчиков", c: Theme.dim }
         if (s.stateCode === 2) return { label: "ОЖИДАНИЕ", sub: "Движители автоматикой не управляются", c: Theme.accent }
         if (hdgCut) return { label: "УПОР СНЯТ — НЕТ КУРСА", sub: "Гирокомпасов нет " + Theme.num(s.hdgLostS, 0) + " с · автоматика не держит судно", c: Theme.alarm }
+        if (posCut) return { label: "УПОР СНЯТ — НЕТ ПОЛОЖЕНИЯ", sub: "Нет систем положения " + mmss(s.refLostS) + " · счисление закончилось, автоматика не держит судно", c: Theme.alarm }
         if (hdgDr) return { label: "СЧИСЛЕНИЕ КУРСА", sub: "Нет гирокомпасов · упор будет снят через " + Theme.num(Math.max(0, s.hdgDrS - s.hdgLostS), 1) + " с", c: Theme.warn }
         if (posDr) return { label: "СЧИСЛЕНИЕ ПОЛОЖЕНИЯ", sub: "Нет систем положения " + mmss(s.refLostS) + " · вероятный уход до " + Theme.num(s.drDriftM, 0) + " м", c: Theme.warn }
         if (s.returning) return { label: "ВОЗВРАТ В ТОЧКУ", sub: "До точки " + Theme.num(s.opErr, 1) + " м · «Держать здесь» — остаться", c: Theme.accent }
@@ -83,6 +85,10 @@ ApplicationWindow {
             "Возьмите управление: джойстик или посты управления движителями.",
             "Проверьте гирокомпасы: питание, связь.",
             "⚠ Когда курс вернётся, удержание продолжится само — будьте готовы." ] }
+        if (posCut) return { c: Theme.alarm, steps: [
+            "Возьмите управление: джойстик или посты управления движителями.",
+            "Проверьте системы положения: питание, связь, поправки.",
+            "⚠ Когда положение вернётся, удержание продолжится само — будьте готовы." ] }
         if (hdgDr) return { c: Theme.warn, steps: [
             "Курс держится по счислению, через " + Theme.num(Math.max(0, s.hdgDrS - s.hdgLostS), 1) + " с упор будет снят.",
             "Готовьтесь взять управление вручную.",
@@ -216,8 +222,8 @@ ApplicationWindow {
                             Layout.fillWidth: true; spacing: 4
                             Caption { text: "Отклонение от заданной точки" }
                             Big {
-                                text: !win.active || s.modeCode !== 4 ? "—" : win.posDr ? "≈ " + Theme.num(s.opErr, 1) + " м" : Theme.num(s.opErr, 1) + " м"
-                                color: win.posDr ? Theme.warn : Theme.text
+                                text: !win.active || s.modeCode !== 4 ? "—" : win.posCut ? "НЕТ" : win.posDr ? "≈ " + Theme.num(s.opErr, 1) + " м" : Theme.num(s.opErr, 1) + " м"
+                                color: win.posCut ? Theme.alarm : win.posDr ? Theme.warn : Theme.text
                             }
                             Label {
                                 text: win.posDr ? "по модели · измерений нет " + win.mmss(s.refLostS)
@@ -273,7 +279,7 @@ ApplicationWindow {
                             Label {
                                 Layout.fillWidth: true; color: Theme.text; font.pixelSize: 14; elide: Text.ElideRight
                                 text: { let n = 0; for (let i = 0; i < core.thrusters.length; ++i) if (core.thrusters[i].taken) ++n
-                                        return "Движители: " + n + " из " + core.thrusters.length + " в управлении" + (win.hdgCut ? ", команды 0 %" : "") }
+                                        return "Движители: " + n + " из " + core.thrusters.length + " в управлении" + (win.hdgCut || win.posCut ? ", команды 0 %" : "") }
                             }
                             Btn { text: "Взять все"; enabled: s.hasShip === true; onClicked: core.command("thr_take all") }
                             ConfirmBtn { label: "Снять все"; cmd: "thr_release all"; enabled: s.hasShip === true }
@@ -464,7 +470,7 @@ ApplicationWindow {
             Layout.fillWidth: true; Layout.preferredHeight: 214; spacing: 12
             Repeater {
                 model: core.thrusters
-                delegate: ThrusterTile { t: modelData; cut: win.hdgCut; Layout.fillWidth: true; Layout.fillHeight: true; Layout.maximumWidth: 380 }
+                delegate: ThrusterTile { t: modelData; cut: win.hdgCut || win.posCut; Layout.fillWidth: true; Layout.fillHeight: true; Layout.maximumWidth: 380 }
             }
             Panel {
                 visible: core.thrusters.length === 0; Layout.fillWidth: true; Layout.fillHeight: true
