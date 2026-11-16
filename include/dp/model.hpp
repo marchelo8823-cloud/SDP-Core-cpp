@@ -221,9 +221,8 @@ public:
     // потом меняются плавно, фазы накапливаются — без скачков ординаты при смене настроек.
     void configure(double hs, double tp, double fromDeg, unsigned seed = 7) {
         comps_.clear();
-        std::mt19937 rng(seed);
-        std::uniform_real_distribution<double> ph(0, 2 * PI), fr(0.75, 1.35);
-        for (int i = 0; i < 10; ++i) { Comp c; c.ratio = fr(rng); c.phase = ph(rng); c.acc = 0; comps_.push_back(c); }
+        PortableRng rng(seed);
+        for (int i = 0; i < 10; ++i) { Comp c; c.ratio = rng.uniform(0.75, 1.35); c.phase = rng.uniform(0, 2 * PI); c.acc = 0; comps_.push_back(c); }
         hs_ = hs; tp_ = tp > 0 ? tp : 8.0; from_ = deg2rad(fromDeg);
         refresh();
     }
@@ -348,7 +347,7 @@ private:
     // Случайные медленные процессы (Орнштейна — Уленбека): порывы ветра, изменение течения, медленный дрейф от волн.
     double ou(double x, double dt, double tau, double sigma) {
         const double a = std::exp(-dt / tau);
-        return x * a + sigma * std::sqrt(1.0 - a * a) * gauss_(rng_);
+        return x * a + sigma * std::sqrt(1.0 - a * a) * rng_.normal();
     }
     void updateTurbulence(double dt) {
         const double k = env_.turbulence;
@@ -366,8 +365,7 @@ private:
     Inertia in_;
     VesselState s_;
     WaveField waves_;
-    std::mt19937 rng_{4242};
-    std::normal_distribution<double> gauss_{0.0, 1.0};
+    PortableRng rng_{4242};
     double gustSpd_ = 0, gustDir_ = 0, curVarN_ = 0, curVarE_ = 0, slowN_ = 0, slowE_ = 0, meanWave_ = 0;
 };
 

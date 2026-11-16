@@ -84,7 +84,7 @@ public:
         const AppCfg& c = sh_->cfg;
         const double lat0 = c.originSet ? c.originLat : 0.0, lon0 = c.originSet ? c.originLon : 0.0;
         lf_ = LocalFrame(); lf_.setOrigin(lat0, lon0); sh_->hub->setOrigin(lat0, lon0);
-        sim_ = std::make_unique<Simulator>(c.vessel, c.thrusters, sb.env, c.simSensors, sb.seed);
+        sim_ = std::make_unique<Simulator>(c.vessel, c.thrusters, sb.env, c.simSensors, seedOverride_ ? seedOverride_ : sb.seed);
         sim_->dyn().state().psi = deg2rad(sb.headingDeg);
         simSpeed_ = sb.speed;
         for (auto& g : c.simSensors.gnss) { ChannelCfg ch; ch.id = g.id; ch.kind = ChannelKind::Gnss; ch.offset = g.offset; ch.sigma = g.sigma; sh_->hub->addChannel(ch); }
@@ -360,6 +360,7 @@ public:
     double clock() const { return t_; }
     const EngineOutput& out() const { return out_; }
     DpEngine* engine() { return sh_ ? sh_->eng.get() : nullptr; }
+    void setSimSeed(unsigned s) { seedOverride_ = s; }   // для проверок: начальное число имитатора вместо книги (0 — из книги)
     DpMode mode() const { return sh_ ? sh_->eng->mode() : DpMode::Standby; }
     const AppCfg* ship() const { return sh_ ? &sh_->cfg : nullptr; }
     Simulator* sim() { return sim_.get(); }
@@ -373,6 +374,7 @@ public:
     }
 
 private:
+    unsigned seedOverride_ = 0;
     // Всё, что зависит от судна: пересоздаётся при загрузке судна и при запуске или остановке имитатора.
     struct Ship {
         AppCfg cfg; size_t sensorCount = 0;
