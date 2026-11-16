@@ -29,4 +29,10 @@ if(NOT WIN32)
              WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
     set_tests_properties(hmi_confirm_${n} PROPERTIES TIMEOUT 120)
   endforeach()
+  # анализ последствий: кнопка «Класс 2» на пульте включает анализ
+  add_test(NAME hmi_ca COMMAND ${CMAKE_COMMAND} -E env QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
+           $<TARGET_FILE:sdp_hmi> --ship ${CMAKE_SOURCE_DIR}/data/Данные_судна_пример.xlsx --sim ${CMAKE_SOURCE_DIR}/tests/scenarios/имитатор_быстро.xlsx
+           --run 20 --cmd "thr_take all" --cmd position --run 30 --press "Класс 2" --expect-ca 2
+           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+  set_tests_properties(hmi_ca PROPERTIES TIMEOUT 120)
 endif()

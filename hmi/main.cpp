@@ -2,6 +2,7 @@
 // Ключи для проверок без экрана (QT_QPA_PLATFORM=offscreen):
 //   --ship <книга судна>  --sim <книга имитатора>  --cmd "<команда ядра>" (можно несколько)  --run <с> (прогнать ядро без реального времени)
 //   --screenshot <файл.png>  --size <Ш>x<В>
+//   --expect-ca <класс> (после нажатий: класс анализа последствий 0, 2 или 3)
 //   --press "<надпись кнопки>" (можно несколько; нажатие кнопки на экране)  --expect-mode <код> (после нажатий: 0 — ожидание, 3 — курс, 4 — позиция; иначе код выхода 4)
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -19,7 +20,7 @@ int main(int argc, char** argv) {
     app.setApplicationName("SDP HMI");
     app.setOrganizationName("SDP");
     QStringList a = app.arguments();
-    QString shot; int w = 1920, h = 1080; QStringList presses; int expectMode = -1;
+    QString shot; int w = 1920, h = 1080; QStringList presses; int expectMode = -1, expectCa = -1;
     HmiCore core;
     for (int i = 1; i < a.size(); ++i) {
         auto next = [&]() { return i + 1 < a.size() ? a[++i] : QString(); };
@@ -31,6 +32,7 @@ int main(int argc, char** argv) {
         else if (k == "--screenshot") shot = next();
         else if (k == "--press") presses << next();
         else if (k == "--expect-mode") expectMode = next().toInt();
+        else if (k == "--expect-ca") expectCa = next().toInt();
         else if (k == "--size") { const QStringList p = next().split('x'); if (p.size() == 2) { w = p[0].toInt(); h = p[1].toInt(); } }
     }
     QQmlApplicationEngine eng;
@@ -59,6 +61,8 @@ int main(int argc, char** argv) {
             const int m = core.property("s").toMap().value("modeCode").toInt();
             std::printf("режим после нажатий: %d\n", m);
             if (expectMode >= 0 && m != expectMode) { std::fprintf(stderr, "ожидался режим %d\n", expectMode); exitPress = 4; }
+            const int ca = core.property("s").toMap().value("caClass").toInt();
+            if (expectCa >= 0 && ca != expectCa) { std::fprintf(stderr, "ожидался класс анализа последствий %d, а не %d\n", expectCa, ca); exitPress = 4; }
             if (shot.isEmpty()) QCoreApplication::exit(exitPress ? exitPress : qmlWarnings ? 3 : 0);
         });
     }
