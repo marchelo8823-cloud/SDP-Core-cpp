@@ -91,9 +91,9 @@ void HmiCore::refresh() {
     m["hdgLostS"] = es.hdgLostS; m["hdgMeasured"] = es.hdgMeasured;
     m["active"] = st == CoreState::Active;
     // отклонение от точки оператора (а не от движущейся опорной точки возврата): та же точка судна, что держит регулятор
-    m["opValid"] = false; m["returning"] = false; m["hdgDrS"] = 2.0;
+    m["opValid"] = false; m["returning"] = false; m["hdgDrS"] = 2.0; m["hdgTimeoutS"] = 2.0;
     if (DpEngine* eng = core_.engine()) {
-        m["hdgDrS"] = eng->estimator().cfg().hdgDeadReckonS;
+        m["hdgDrS"] = eng->estimator().cfg().hdgDeadReckonS; m["hdgTimeoutS"] = eng->estimator().cfg().hdgTimeoutS;
         const auto& ctl = eng->controller();
         m["returning"] = ctl.returning();
         if (core_.hasShip() && st == CoreState::Active) {

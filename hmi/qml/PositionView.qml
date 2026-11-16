@@ -28,7 +28,7 @@ Rectangle {
             const s = root.s
             if (!s.hasShip) {
                 g.fillStyle = Theme.dim; g.font = "20px '" + Theme.font + "'"; g.textAlign = "center"
-                g.fillText("Судно не загружено — «Открыть судно…»", W / 2, H / 2)
+                g.fillText("Судно не загружено — «Судно…»", W / 2, H / 2)
                 return
             }
             const R = Math.min(W, H) / 2 - 62       // место снаружи — под круг с градусами
@@ -39,11 +39,24 @@ Rectangle {
             const Y = function (n) { return cy - (n - c0n) * k }
             // кольца дальности
             g.strokeStyle = Theme.line; g.lineWidth = 1; g.fillStyle = Theme.dim; g.font = "13px '" + Theme.font + "'"; g.textAlign = "left"
+            // подписи колец — по той диагонали, где нет стрелок ветра и возмущения
+            const busy = []
+            if (s.windValid) busy.push((s.windFromRel + s.hdg) * Math.PI / 180)
+            if (Math.sqrt(s.distN * s.distN + s.distE * s.distE) > 2000) busy.push(Math.atan2(s.distE, s.distN) + Math.PI)
+            let lb = Math.PI / 4, best = -1
+            for (let j = 0; j < 4; ++j) {
+                const c = Math.PI / 4 + j * Math.PI / 2; let m = Math.PI
+                for (let q = 0; q < busy.length; ++q) { const d = Math.abs(Math.atan2(Math.sin(c - busy[q]), Math.cos(c - busy[q]))); if (d < m) m = d }
+                if (m > best + 1e-6) { best = m; lb = c }
+            }
+            const lsx = Math.sin(lb), lsy = -Math.cos(lb)
+            g.textAlign = lsx >= 0 ? "left" : "right"
             for (let i = 1; i <= 4; ++i) {
                 const r = R * i / 4
                 g.beginPath(); g.arc(cx, cy, r, 0, 2 * Math.PI); g.stroke()
-                g.fillText(Theme.num(root.range * i / 4, root.range >= 40 ? 0 : 1) + " м", cx + r * 0.707 + 3, cy - r * 0.707 - 3)
+                g.fillText(Theme.num(root.range * i / 4, root.range >= 40 ? 0 : 1) + " м", cx + r * lsx + (lsx >= 0 ? 3 : -3), cy + r * lsy + (lsy < 0 ? -3 : 13))
             }
+            g.textAlign = "left"
             g.beginPath(); g.moveTo(cx - R, cy); g.lineTo(cx + R, cy); g.moveTo(cx, cy - R); g.lineTo(cx, cy + R); g.stroke()
             // круг с градусами: штрихи через 5°, длинные через 30°, подписи через 30°, С/В/Ю/З
             const PR = function (deg, r) { const a = deg * Math.PI / 180; return [cx + Math.sin(a) * r, cy - Math.cos(a) * r] }
