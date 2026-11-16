@@ -60,10 +60,14 @@ int main(int argc, char** argv) {
       CHECK(!ok && has(r.errors, "встречный упор задаётся парой"), "встречный упор без угла — ошибка с пояснением"); }
     { AppCfg c; BookReport r; const bool ok = loadShipBook(bad + "/встречный_упор_много.xlsx", c, r);
       CHECK(!ok && has(r.errors, "от 5 до 50 %"), "встречный упор 70 % — ошибка «от 5 до 50 %»"); }
+    { AppCfg c; BookReport r; const bool ok = loadShipBook(bad + "/группа_пустая.xlsx", c, r);
+      CHECK(!ok && has(r.errors, "без пустых"), "группа отказа «ГРЩ-1;;МО-1» — ошибка с пояснением"); }
     { AppCfg c; BookReport r; const bool ok = loadShipBook(bad + "/уход_ноль.xlsx", c, r);
       CHECK(!ok && has(r.errors, "должен быть больше нуля"), "уход за 5 мин = 0 — ошибка"); }
     { AppCfg c; BookReport r; loadShipBook(argv[2], c, r);
       CHECK(c.thrusters[0].preloadPct == 0 && std::fabs(c.est.drDrift5MinM - 14) < 1e-9, "пример без встречного упора; уход по умолчанию 14 м"); }
+    { AppCfg c; BookReport r; loadShipBook(argv[2], c, r);
+      CHECK(c.thrusters[0].failGroups == "ГРЩ-1" && c.thrusters[1].failGroups == "ГРЩ-2" && c.thrusters[3].failGroups == "ГРЩ-2", "группы отказа прочитаны из примера"); }
     { AppCfg c; BookReport r; const bool ok = loadShipBook(bad + "/выдача.xlsx", c, r);
       for (auto& e : r.errors) std::printf("     %s\n", e.c_str());
       CHECK(ok && c.links.size() == 1 && c.links[0].entries.size() == 2 && c.links[0].port == 1502, "лист «Выдача»: линия Modbus и два регистра"); }

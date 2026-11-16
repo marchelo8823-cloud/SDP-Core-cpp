@@ -52,3 +52,4 @@ make("уход_ноль.xlsx", lambda wb: wb["Корпус"].cell(row=row(wb["К
 make("встречный_упор_без_угла.xlsx", lambda wb: wb["Движители"].cell(row=2, column=col(wb["Движители"], "Встречный упор, %"), value=20))
 open(os.path.join(out, "не_книга.xlsx"), "w").write("это не книга Excel, а обычный текст\n" * 5)
 print("готово")
+make("группа_пустая.xlsx", lambda wb: wb["Движители"].cell(row=2, column=col(wb["Движители"], "Группа отказа"), value="ГРЩ-1;;МО-1"))

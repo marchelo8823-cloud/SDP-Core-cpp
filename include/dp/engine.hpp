@@ -2,6 +2,7 @@
 #pragma once
 #include "dp/forecast.hpp"
 #include "dp/control.hpp"
+#include "dp/consequence.hpp"
 
 namespace dp {
 
@@ -59,6 +60,8 @@ public:
     bool thrusterFbLost(size_t i) const { return i < fbOut_.size() && fbOut_[i]; }
     void setThrusterPreload(size_t i, double prefDeg, double pct) { alloc_.setPreload(i, prefDeg, pct); }
     void setMode(DpMode m) { ctl_.setMode(m, est_.state()); hereReq_ = false; }
+    Consequence& consequence() { return ca_; }
+    const Consequence& consequence() const { return ca_; }
     // «Держать здесь» (выбор оператора после потери положения, как Hold в NAVIS NavDP 4000): по умолчанию после возврата
     // измерений судно плавно возвращается в заданную точку (POS_RETURN). Эта команда вместо возврата делает заданной точкой
     // место, где судно находится: во время возврата — сразу; пока измерений нет — в момент их возврата (оценке по счислению
@@ -243,6 +246,17 @@ public:
         if (ok) co = ctl_.compute(dt, es, known, cap);
         o.ctl = co;
 
+        // --- анализ последствий отказа: в режиме «Позиция», опорная точка неподвижна (уставка достигнута), есть измерения положения, нет возврата
+        {
+            const bool inPos = m == DpMode::AutoPosition && ok;
+            const double dpos = std::hypot(co.refN - caRefN_, co.refE - caRefE_), dpsi = std::fabs(rad2deg(wrapPi(deg2rad(co.refPsiDeg - caRefPsi_))));
+            caRefN_ = co.refN; caRefE_ = co.refE; caRefPsi_ = co.refPsiDeg;
+            const bool still = dt > 0 && dpos / dt < 0.005 && dpsi / dt < 0.01;
+            std::vector<CaMsg> cm;
+            ca_.step(fr.time, dt, inPos, inPos && still && !es.refLost && !ctl_.returning(), co.tau, alloc_.thrusters(), cm);
+            for (const auto& x : cm) o.alarms.push_back({x.code, x.text, x.critical});
+        }
+
         // --- распределение
         if (m == DpMode::Standby || m == DpMode::Manual || !ok) {
             // команды не формируем: в ручном режиме движители управляются с поста, при потере данных удерживаем нулевую тягу
@@ -344,6 +358,7 @@ public:
 
 private:
     bool highLoad_ = false, dropLatched_ = false, wasReturning_ = false; double onT_ = 0, offT_ = 0;
+    Consequence ca_; double caRefN_ = 0, caRefE_ = 0, caRefPsi_ = 0;
     bool hereReq_ = false; Setpoint hereSp_;
     static bool sameSp(const Setpoint& a, const Setpoint& b) { return std::fabs(a.n - b.n) < 1e-6 && std::fabs(a.e - b.e) < 1e-6 && std::fabs(a.psiDeg - b.psiDeg) < 1e-6; }
     std::vector<char> want_, fbSeen_, fbOut_; std::vector<double> fbLostT_;
