@@ -53,6 +53,14 @@ dp_test(capability_test ${D}/Данные_судна_пример.xlsx)
 dp_test(return_seeds_test ${D}/Данные_судна_пример.xlsx ${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/имитатор_быстро.xlsx)
 dp_test(consequence_test ${D}/Данные_судна_пример.xlsx ${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/имитатор_быстро.xlsx)
 dp_test(alloc_turn_test ${D}/Данные_судна_пример.xlsx)
+# сопряжение с пультами управления движителями (ПУ): реестр сигналов и книга сопряжения
+add_executable(sdp_pu_check apps/sdp_pu_check.cpp)
+target_link_libraries(sdp_pu_check dpcore)
+dp_test(pu_test ${D}/ПУ_реестр_сигналов.csv ${D}/Сопряжение_ПУ_шаблон.xlsx ${D}/Сопряжение_ПУ_Бахтемир_пример.xlsx ${D}/Сопряжение_ПУ_Бейсуг_пример.xlsx
+        ${D}/Данные_судна_пример.xlsx ${CMAKE_CURRENT_SOURCE_DIR}/tests/books)
+add_test(NAME pu_check_example COMMAND sdp_pu_check ${D}/Сопряжение_ПУ_Бахтемир_пример.xlsx --registry ${D}/ПУ_реестр_сигналов.csv --ship ${D}/Данные_судна_пример.xlsx)
+add_test(NAME pu_check_rejects COMMAND sdp_pu_check ${CMAKE_CURRENT_SOURCE_DIR}/tests/books/пу_адрес.xlsx --registry ${D}/ПУ_реестр_сигналов.csv)
+set_tests_properties(pu_check_rejects PROPERTIES WILL_FAIL TRUE)
 dp_test(shipbook_test ${D}/Данные_судна_шаблон.xlsx ${D}/Данные_судна_пример.xlsx ${CMAKE_CURRENT_SOURCE_DIR}/tests/books ${D}/Данные_имитатора_шаблон.xlsx ${D}/Данные_имитатора_пример.xlsx)
 
 # отчёт по записям (tools/sdp_report.py), если есть Python 3
