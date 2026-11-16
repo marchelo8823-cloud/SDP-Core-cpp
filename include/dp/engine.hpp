@@ -160,8 +160,8 @@ public:
         // returnStartM от уставки, оно возвращается в неё плавно, не быстрее returnSpeedMS (ctl_.beginReturn)
         if (needPos && es.posValid && es.refLost) {
             if (es.posDropout) {
-                char u[32]; std::snprintf(u, sizeof u, "%.1f", es.posUncertM);
-                o.alarms.push_back({"POS_DROPOUT", "Потеря положения — нет измерений " + std::to_string(static_cast<int>(es.refLostS)) + " с, удержание по модели (счисление), погрешность положения ≈ " + u + " м", true, 1});
+                char u[160]; std::snprintf(u, sizeof u, "вероятный уход ≈ %.1f м (оценка), погрешность фильтра до %.1f м", es.drDriftM, es.posUncertM);
+                o.alarms.push_back({"POS_DROPOUT", "Потеря положения — нет измерений " + std::to_string(static_cast<int>(es.refLostS)) + " с, удержание по модели (счисление), " + u, true, 1});
                 dropLatched_ = true;
             } else o.alarms.push_back({"POS_ALL_REJ", "Все системы положения отклонены или недоступны — удержание по модели", true, 1});
         }
@@ -225,13 +225,30 @@ public:
                 }
             }
             for (const auto& id : o.alloc.softZone) o.alarms.push_back({"AZ_SOFT_ZONE_" + id, "Колонка " + id + " в нежелательном секторе (струя на соседнюю колонку): иначе запрос не выполнить", false});
-            if (o.alloc.saturated) o.alarms.push_back({"SATURATION", "Запрошенное усилие превышает возможности комплекса", false});
-            // тревога высокой загрузки с гистерезисом: включается после 3 с выше 90 % допустимой, снимается после 3 с ниже 80 %
+            // Насыщение: запрос больше возможностей комплекса — тревога сразу. Если же запрос в пределах возможностей, а недодача только
+            // оттого, что колонки разворачиваются (при торможении нужен разворот до 180°), — сообщение «Колонки разворачиваются»;
+            // тревога — если недодача держится дольше времени разворота на 180° самой медленной колонки + 10 с
+            // (колонка не поворачивается — это ещё и тревога расхождения команды и обратной связи THR_FB_MISMATCH).
+            // Снимается тревога, когда насыщения нет 3 с подряд (без мигания при работе на пределе).
+            // запрос регулятора до ограничения возможностями (регулятор сам обрезает команду до предела, поэтому по обрезанной не видно)
+            const double rqX = o.ctl.law.X + o.ctl.windFF.X + o.ctl.bias.X, rqY = o.ctl.law.Y + o.ctl.windFF.Y + o.ctl.bias.Y, rqN = o.ctl.law.N + o.ctl.windFF.N + o.ctl.bias.N;
+            const bool overCap = std::fabs(rqX) > cap.X || std::fabs(rqY) > cap.Y || std::fabs(rqN) > cap.N;
+            double turnLimit = 10.0;
+            for (const auto& t : th) if (t.enabled && t.type == ThrusterType::Azimuth) turnLimit = std::max(turnLimit, 180.0 / std::max(1.0, t.azRateDegS) + 10.0);
+            satT_ = o.alloc.saturated ? satT_ + dt : 0.0;
+            const bool turnOnly = o.alloc.saturated && o.alloc.turning && !overCap;
+            const bool realSat = (o.alloc.saturated && (!turnOnly || satT_ > turnLimit)) || (overCap && o.alloc.utilization > 0.95);
+            if (realSat) { satOn_ = true; satClrT_ = 0; }
+            else if (satOn_) { satClrT_ += dt; if (satClrT_ >= 3.0) satOn_ = false; }
+            if (satOn_) o.alarms.push_back({"SATURATION", "Запрошенное усилие превышает возможности комплекса", false});
+            else if (turnOnly) o.alarms.push_back({"AZ_TURNING", "Колонки разворачиваются: упор временно набирается не полностью", false, 3});
+            // тревога высокой загрузки с гистерезисом: включается после 3 с выше 90 % допустимой, снимается после 3 с ниже 80 %;
+            // пока колонки разворачиваются при запросе в пределах возможностей, время не копится (кратковременная перекладка)
             const double u = o.alloc.utilization;
-            if (!highLoad_) { onT_ = u > 0.9 ? onT_ + dt : 0.0; if (onT_ >= 3.0) { highLoad_ = true; offT_ = 0; } }
+            if (!highLoad_) { onT_ = u > 0.9 && !(o.alloc.turning && !overCap) ? onT_ + dt : (u > 0.9 ? onT_ : 0.0); if (onT_ >= 3.0) { highLoad_ = true; offT_ = 0; } }
             else { offT_ = u < 0.8 ? offT_ + dt : 0.0; if (offT_ >= 3.0) { highLoad_ = false; onT_ = 0; } }
         }
-        if (m == DpMode::Standby || m == DpMode::Manual || !ok) { highLoad_ = false; onT_ = offT_ = 0; }
+        if (m == DpMode::Standby || m == DpMode::Manual || !ok) { highLoad_ = false; onT_ = offT_ = 0; satT_ = 0; satOn_ = false; satClrT_ = 0; }
         if (highLoad_) o.alarms.push_back({"HIGH_LOAD", "Загрузка движителей выше 90 % допустимой", false});
         // --- радиус удержания: предупреждение при 80 % радиуса, аларм при выходе за радиус (с выдержкой и гистерезисом)
         if (holdR_ > 0 && ok && (m == DpMode::AutoPosition || m == DpMode::Track)) {
@@ -280,7 +297,7 @@ public:
 
 private:
     bool highLoad_ = false, dropLatched_ = false, wasReturning_ = false; double onT_ = 0, offT_ = 0;
-    Forecaster fc_; Capability lastCap_; bool lastSat_ = false;
+    Forecaster fc_; Capability lastCap_; bool lastSat_ = false; double satT_ = 0, satClrT_ = 0; bool satOn_ = false;
     double hdgLim_ = 0; bool hWarn_ = false, hOut_ = false; double hWarnOn_ = 0, hWarnOff_ = 0, hOutOn_ = 0, hOutOff_ = 0;
     std::vector<double> mmT_;
     double holdR_ = 0; bool rWarn_ = false, rOut_ = false; double rWarnOn_ = 0, rWarnOff_ = 0, rOutOn_ = 0, rOutOff_ = 0;
