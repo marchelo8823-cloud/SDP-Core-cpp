@@ -369,7 +369,7 @@ ApplicationWindow {
             ListView {
                 Layout.fillWidth: true; Layout.fillHeight: true; clip: true
                 model: core.log
-                delegate: Label { text: modelData; color: modelData.indexOf("ТРЕВОГА") >= 0 ? Theme.warn : Theme.dim; font.pixelSize: 12; font.family: Theme.mono; width: ListView.view.width; elide: Text.ElideRight }
+                delegate: Label { text: modelData; textFormat: Text.PlainText; color: modelData.indexOf("ТРЕВОГА") >= 0 ? Theme.warn : Theme.dim; font.pixelSize: 12; font.family: Theme.mono; width: ListView.view.width; elide: Text.ElideRight }
             }
             TextField { id: cmd; Layout.fillWidth: true; implicitHeight: 34; placeholderText: "команда ядра (help — список)"; font.family: Theme.mono; font.pixelSize: 13
                         onAccepted: { core.command(text); text = "" } }
@@ -427,7 +427,7 @@ ApplicationWindow {
     // ------------------------------------------------ вкладки и своё рабочее место
     property int tabIndex: 0
     readonly property int sensorBad: { let n = 0; for (let i = 0; i < core.sensors.length; ++i) if (!core.sensors[i].valid || core.sensors[i].rejected) ++n; return n }
-    readonly property int thrBad: { let n = 0; for (let i = 0; i < core.thrusters.length; ++i) if (core.thrusters[i].failed) ++n; return n }
+    readonly property int thrBad: { let n = 0; for (let i = 0; i < core.thrusters.length; ++i) if (core.thrusters[i].failed || core.thrusters[i].fbLost) ++n; return n }
     property bool wsEdit: false
     readonly property var wsPanels: ["План", "Курс", "Отклонение", "Режим", "Точка / что делать", "Тревоги", "Датчики", "Среда", "Анализ последствий", "Журнал", "Загрузка", "Движители", "Тренд отклонения", "Тренд загрузки", "Пусто"]
     function wsDefault() {
@@ -441,7 +441,16 @@ ApplicationWindow {
     function opsLoad() {
         try {
             const o = JSON.parse(core.setting("operators"))
-            if (o && o.list && o.list[o.cur]) return o
+            const okSet = function (w) {   // повреждённый файл настроек не должен ломать пульт
+                if (!w || !Array.isArray(w.sets) || w.sets.length !== 3 || typeof w.cur !== "number" || w.cur < 0 || w.cur > 2) return false
+                for (let i = 0; i < 3; ++i) if (!w.sets[i] || typeof w.sets[i].name !== "string" || !Array.isArray(w.sets[i].cells) || w.sets[i].cells.length !== 5) return false
+                return true
+            }
+            if (o && o.list && typeof o.cur === "string" && okSet(o.list[o.cur])) {
+                for (const k in o.list) if (!okSet(o.list[k])) delete o.list[k]
+                if (!o.list["Общий"]) o.list["Общий"] = wsDefault()
+                return o
+            }
         } catch (e) {}
         let w = wsDefault()
         try { const old = JSON.parse(core.setting("workspace")); if (old && old.sets && old.sets.length === 3) w = old } catch (e) {}   // наборы прежней версии
@@ -514,7 +523,7 @@ ApplicationWindow {
                 Layout.preferredWidth: 270; Layout.fillHeight: true
                 ColumnLayout {
                     anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; anchors.topMargin: 6; anchors.bottomMargin: 6; spacing: 3
-                    Label { text: "Вахта: " + win.ops.cur; color: Theme.accent; font.pixelSize: 13; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
+                    Label { text: "Вахта: " + win.ops.cur; textFormat: Text.PlainText; color: Theme.accent; font.pixelSize: 13; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
                     Label { text: s.shipName || "судно не загружено"; color: s.shipName ? Theme.text : Theme.dim; font.pixelSize: 16; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
                     RowLayout {
                         spacing: 8
@@ -634,7 +643,7 @@ ApplicationWindow {
                     RowLayout {
                         anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 10; spacing: 10
                         Label { text: win.wsEdit ? "НАСТРОЙКА РАБОЧЕГО МЕСТА" : "РАБОЧЕЕ МЕСТО"; color: win.wsEdit ? Theme.accent : Theme.dim; font.bold: true; font.pixelSize: 14 }
-                        Label { text: win.wsEdit ? "Удержание продолжается." : "Заступающий на вахту выбирает себя в списке. Шапка, тревоги и режим закреплены всегда."
+                        Label { text: win.wsEdit ? "Настройка экрана не меняет ни режим, ни команды движителям." : "Заступающий на вахту выбирает себя в списке. Шапка и тревоги видны всегда; режим — на вкладке «Главный»."
                                 color: Theme.text; font.pixelSize: 14; Layout.fillWidth: true; elide: Text.ElideRight }
                         Label { text: "Оператор"; color: Theme.dim; font.pixelSize: 14 }
                         ComboBox {
@@ -761,8 +770,8 @@ ApplicationWindow {
                                 readonly property real dev: modelData.fb ? Math.abs(modelData.cmdPct - modelData.fbPct) : 0
                                 Label { text: modelData.id; color: Theme.text; font.bold: true; font.pixelSize: 15; Layout.fillWidth: true; Layout.preferredWidth: 1 }
                                 Label { text: modelData.type; color: Theme.text; font.pixelSize: 14; Layout.fillWidth: true; Layout.preferredWidth: 1 }
-                                Label { text: modelData.failed ? "ОТКАЗ" : !modelData.enabled ? "вне работы" : (win.hdgCut || win.posCut) && modelData.taken ? "упор снят" : modelData.taken ? "в управлении" : "не взят"
-                                        color: modelData.failed || ((win.hdgCut || win.posCut) && modelData.taken) ? Theme.alarm : modelData.taken ? Theme.ok : Theme.dim; font.pixelSize: 14; Layout.fillWidth: true; Layout.preferredWidth: 1 }
+                                Label { text: modelData.failed ? "ОТКАЗ" : modelData.fbLost ? "нет обратной связи" : !modelData.enabled ? "вне работы" : (win.hdgCut || win.posCut) && modelData.taken ? "упор снят" : modelData.taken ? "в управлении" : "не взят"
+                                        color: modelData.failed || ((win.hdgCut || win.posCut) && modelData.taken) ? Theme.alarm : modelData.fbLost ? Theme.warn : modelData.taken ? Theme.ok : Theme.dim; font.pixelSize: 14; Layout.fillWidth: true; Layout.preferredWidth: 1 }
                                 Label { text: Theme.num(modelData.cmdPct, 0); color: Theme.accent; font.family: Theme.mono; font.pixelSize: 15; Layout.fillWidth: true; Layout.preferredWidth: 1 }
                                 Label { text: modelData.fb ? Theme.num(modelData.fbPct, 0) : "—"; color: Theme.fb; font.family: Theme.mono; font.pixelSize: 15; Layout.fillWidth: true; Layout.preferredWidth: 1 }
                                 Label { text: modelData.fb ? Theme.num(dev, 0) + " %" : "—"; color: dev > 10 ? Theme.warn : Theme.dim; font.family: Theme.mono; font.pixelSize: 15; Layout.fillWidth: true; Layout.preferredWidth: 1 }

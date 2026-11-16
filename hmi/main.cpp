@@ -69,6 +69,16 @@ int main(int argc, char** argv) {
             if (shot.isEmpty()) QCoreApplication::exit(exitPress ? exitPress : qmlWarnings ? 3 : 0);
         });
     }
+    if (!expectState.isEmpty() && win && presses.isEmpty() && shot.isEmpty()) {   // проверка надписи шапки (состояние для оператора)
+        core.setPaused(true);
+        QTimer::singleShot(800, [&]() {
+            const QString st = win->property("stLabel").toString();
+            std::printf("шапка: %s\n", st.toUtf8().constData());
+            const bool ok = st == expectState;
+            if (!ok) std::fprintf(stderr, "ожидалась шапка «%s»\n", expectState.toUtf8().constData());
+            QCoreApplication::exit(!ok ? 4 : qmlWarnings ? 3 : 0);
+        });
+    }
     if (!shot.isEmpty() && win) {
         core.setPaused(true);
         QTimer::singleShot(1500, [&]() {
