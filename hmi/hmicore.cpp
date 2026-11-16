@@ -20,7 +20,7 @@ std::string HmiCore::localPath(const QString& p) {
 void HmiCore::say(const std::string& m) {
     const QString t = QString::fromStdString(m);
     for (const QString& line : t.split('\n', Qt::SkipEmptyParts))
-        log_.prepend(QTime::currentTime().toString("HH:mm:ss") + "  " + line);
+        log_.prepend(shipClock() + "  " + line);
     while (log_.size() > 300) log_.removeLast();
     emit logChanged();
 }
@@ -58,6 +58,11 @@ void HmiCore::runFor(double seconds) {
 QString HmiCore::setting(const QString& key) const { return QSettings("SDP", "sdp_hmi").value(key).toString(); }
 void HmiCore::setSetting(const QString& key, const QString& value) { QSettings q("SDP", "sdp_hmi"); q.setValue(key, value); }
 void HmiCore::note(const QString& text) { say(text.toStdString()); }
+// Судовое время ядра (UTC + пояс судна); до первого цикла — часы компьютера.
+QString HmiCore::shipClock() const {
+    const ShipTime& st = core_.shipTime();
+    return QString::fromStdString(st.utc() > 0 ? st.clock() : hmsText(pcUtcNow(), st.zoneMin()));
+}
 
 void HmiCore::sample(double load) {
     loadHist_.push_back(load); while (loadHist_.size() > 150) loadHist_.pop_front();
@@ -101,6 +106,16 @@ void HmiCore::refresh() {
     m["roll"] = rad2deg(es.roll); m["pitch"] = rad2deg(es.pitch); m["heave"] = es.heave;
     m["waveHs"] = es.wave.valid ? es.wave.hs : -1.0;
     if (core_.simRunning()) { auto* sim = core_.sim(); const auto& tr = sim->truth(); m["trueN"] = tr.n; m["trueE"] = tr.e; }
+    // судовое время: часы, дата, пояс, источник, предложение перевести пояс
+    {
+        const ShipTime& st = core_.shipTime();
+        m["shipClock"] = shipClock(); m["shipDate"] = QString::fromStdString(dateText(st.utc() > 0 ? st.utc() : pcUtcNow(), st.zoneMin()));
+        m["zone"] = QString::fromStdString(zoneText(st.zoneMin())); m["zoneMin"] = st.zoneMin();
+        m["utcClock"] = QString::fromStdString(hmsText(st.utc() > 0 ? st.utc() : pcUtcNow(), 0));
+        m["timeSrc"] = QString::fromStdString(st.sourceText()); m["timeSrcPc"] = st.source() == ShipTime::Pc; m["timeGnss"] = st.usingGnss();
+        m["zonePending"] = st.zonePending(); m["zoneSuggest"] = st.suggestValid() ? QString::fromStdString(zoneText(st.suggestMin())) : QString();
+        m["pcDiff"] = st.pcDiff(); m["gnssTimeFresh"] = st.gnssFresh();
+    }
     // потеря положения и курса: сколько секунд нет измерений, вероятный уход, сколько осталось до снятия упора
     m["refLostS"] = es.refLostS; m["posDropout"] = es.posDropout; m["drDriftM"] = es.drDriftM;
     m["hdgLostS"] = es.hdgLostS; m["hdgMeasured"] = es.hdgMeasured;
@@ -174,7 +189,7 @@ void HmiCore::refresh() {
         QVariantMap x; const QString code = QString::fromStdString(a.code);
         x["code"] = code; x["text"] = QString::fromStdString(a.text); x["level"] = a.level();   // 1 — аварийная, 2 — предупреждение, 3 — сообщение
         x["acked"] = acked_.contains(code); now.insert(code);
-        if (!alarmTime_.contains(code)) alarmTime_.insert(code, QTime::currentTime().toString("HH:mm:ss"));
+        if (!alarmTime_.contains(code)) alarmTime_.insert(code, shipClock());
         x["time"] = alarmTime_.value(code);
         al.push_back(x);
     }

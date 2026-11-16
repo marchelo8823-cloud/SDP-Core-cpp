@@ -65,6 +65,7 @@ private:
     QVariantMap trends_;
     QHash<QString, QString> alarmTime_;                           // когда тревога появилась (часы пульта)
     void sample(double load);
+    QString shipClock() const;
     double lastTrail_ = -1e9;
     QSet<QString> acked_;
 };

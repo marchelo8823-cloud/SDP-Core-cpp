@@ -51,6 +51,7 @@ endif()
 dp_test(core_test ${D}/Данные_судна_пример.xlsx ${D}/Данные_имитатора_пример.xlsx ${CMAKE_CURRENT_SOURCE_DIR}/tests/books/нет_упора.xlsx)
 dp_test(capability_test ${D}/Данные_судна_пример.xlsx)
 dp_test(return_seeds_test ${D}/Данные_судна_пример.xlsx ${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/имитатор_быстро.xlsx)
+dp_test(shiptime_test ${D}/Данные_судна_пример.xlsx ${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/имитатор_быстро.xlsx)
 dp_test(consequence_test ${D}/Данные_судна_пример.xlsx ${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/имитатор_быстро.xlsx)
 dp_test(alloc_turn_test ${D}/Данные_судна_пример.xlsx)
 # сопряжение с пультами управления движителями (ПУ): реестр сигналов и книга сопряжения

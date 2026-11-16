@@ -125,6 +125,7 @@ public:
             fr = hub.buildFrame(monotonicSeconds());
         }
         out_ = eng.step(dt_, fr);
+        stepTime(hub);
         if (active() && opSpSet_) opSp_ = eng.controller().setpoint();   // уставку мог перенести сам движок (here после возврата положения)
         for (const auto& s : out_.infos) { alarms_.info(clock(), s); say(s); }
         alarms_.update(clock(), out_.alarms);
@@ -149,6 +150,21 @@ public:
         }
         writeLog();
     }
+
+    // Судовое время (shiptime.hpp): время GNSS от хаба, долгота по оценке ядра; в имитации — часы компьютера,
+    // пояс по долготе — только если в данных судна задано начало координат (иначе пояс компьютера).
+    void stepTime(SensorHub& hub) {
+        const double hnow = sim_ ? t_ : monotonicSeconds();
+        double u = 0, at = 0;
+        if (!sim_ && hub.latestUtc(u, at) && at != lastUtcAt_) { st_.feedGnss(u, at); lastUtcAt_ = at; }
+        double lat = 0, lon = 0;
+        const bool lv = out_.est.posValid && (!sim_ || sh_->cfg.originSet) && hub.toGeo(out_.est.n, out_.est.e, lat, lon);
+        std::vector<TimeMsg> tm; std::vector<std::string> ti;
+        st_.update(hnow, pcUtcNow(), lv, lon, sim_ != nullptr, tm, ti);
+        for (const auto& m : tm) { Alarm a; a.code = m.code; a.text = m.text; a.prio = m.prio; out_.alarms.push_back(a); }
+        for (const auto& s : ti) { alarms_.info(clock(), s); say(s); }
+    }
+    const ShipTime& shipTime() const { return st_; }
 
     CoreState state() const {
         if (!sh_) return CoreState::NoShip;
@@ -179,6 +195,8 @@ public:
                "  cap [течение м/с]                   возможности удержания: предельный ветер по сценариям\n"
                "  class 2|3|off                       анализ последствий отказа (по умолчанию выключен)\n"
                "  ca [ветер м/с откуда ° [течение]]   анализ последствий сейчас; с погодой — по введённой погоде\n"
+               "  time [gnss|pc]                      судовое время; источник: GNSS (по умолчанию, запасной — компьютер) или компьютер\n"
+               "  zone accept|pc|<±ч[:мм]>            судовой пояс: перевести на пояс по долготе, как на компьютере, или задать\n"
                "  status | help | quit\n";
     }
 
@@ -191,6 +209,24 @@ public:
         if (c == "quit" || c == "exit") { quit_ = true; return; }
         if (c == "help") { say(helpText()); return; }
         if (c == "status") { statusRequested_ = true; return; }
+        if (c == "time") {
+            std::string w; is >> w;
+            if (w == "gnss") say(st_.setSource(ShipTime::Gnss)); else if (w == "pc") say(st_.setSource(ShipTime::Pc));
+            else if (w.empty()) say(st_.status()); else say("Формат: time [gnss|pc]");
+            return;
+        }
+        if (c == "zone") {
+            std::string w; is >> w;
+            if (w == "accept") say(st_.accept());
+            else if (w == "pc") say(st_.setZonePc());
+            else if (!w.empty() && (w[0] == '+' || w[0] == '-' || (w[0] >= '0' && w[0] <= '9'))) {
+                const int sg = w[0] == '-' ? -1 : 1; const std::string v = (w[0] == '+' || w[0] == '-') ? w.substr(1) : w;
+                const size_t k = v.find(':'); const int hh = std::atoi(v.substr(0, k).c_str()), mm = k == std::string::npos ? 0 : std::atoi(v.substr(k + 1).c_str());
+                if (hh > 14 || mm > 59) say("Формат: zone +3 | zone -3:30"); else say(st_.setZone(sg * (hh * 60 + mm)));
+            }
+            else say("Формат: zone accept | zone pc | zone +3 | zone -3:30");
+            return;
+        }
         if (c == "ship") {
             std::string w; is >> w; const std::string p = rest();
             if (w == "load" && !p.empty()) loadShip(p);
@@ -462,6 +498,7 @@ private:
 
     CoreSettings set_; Say say_; double dt_;
     std::unique_ptr<Ship> sh_; std::string shipPath_; BookReport lastRep_;
+    ShipTime st_; double lastUtcAt_ = -1e18;
     std::unique_ptr<Simulator> sim_; double simSpeed_ = 1.0;
     LocalFrame lf_;
     AlarmMgr alarms_;
