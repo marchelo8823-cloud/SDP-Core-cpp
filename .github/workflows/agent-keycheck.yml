@@ -1,0 +1,29 @@
+# Проверка ключа Anthropic для агентов: один короткий запрос к API, в журнал — только код ответа и текст ошибки.
+# Сам ключ не печатается. Запуск вручную владельцем: Actions → «Агенты: проверка ключа» → Run workflow.
+name: "Агенты: проверка ключа"
+on:
+  workflow_dispatch:
+env:
+  MODEL: ${{ vars.SDP_AGENT_MODEL || 'claude-sonnet-5-5' }}
+jobs:
+  check:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - name: Запрос к Anthropic API
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then echo "::error::Секрет ANTHROPIC_API_KEY не задан или пуст"; exit 1; fi
+          echo "Длина ключа: ${#KEY} знаков; начинается с sk-ant-: $([ "${KEY#sk-ant-}" != "$KEY" ] && echo да || echo нет)"
+          code=$(curl -sS -o resp.json -w '%{http_code}' https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $KEY" -H "anthropic-version: 2023-06-01" -H "content-type: application/json" \
+            -d "{\"model\":\"$MODEL\",\"max_tokens\":5,\"messages\":[{\"role\":\"user\",\"content\":\"ok\"}]}")
+          echo "Модель: $MODEL"
+          echo "Код ответа: $code"
+          jq -r 'if .error then "Ошибка: \(.error.type) — \(.error.message)" else "Ответ получен, ключ и модель работают" end' resp.json
+          rm -f resp.json
+          [ "$code" = 200 ]
