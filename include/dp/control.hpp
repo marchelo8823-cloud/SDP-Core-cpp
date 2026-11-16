@@ -53,9 +53,9 @@ struct ControlCfg {
     // торможение дрейфа в начале возврата: опорная точка стартует со скоростью судна и гасит её с этим ускорением, м/с²
     // (не догоняет судно полным упором; решение владельца 16.11.2026)
     double returnBrakeAccel = 0.05;
-    double returnSettleM = 1.0;
-    double returnErrMaxM = 1.0;
-    double returnVelGain = 0.5;       // притормаживание сверх предела возврата: ускорение = это × превышение скорости к точке, 1/с       // при возврате ошибка положения для закона не больше этого, м       // выдержка в начале возврата длится, пока погрешность фильтра больше этого, м (не дольше 30 с сверх)
+    double returnSettleM = 1.0;       // выдержка в начале возврата длится, пока погрешность фильтра больше этого, м (не дольше 30 с сверх)
+    double returnErrMaxM = 1.0;       // при возврате ошибка положения для закона не больше этого, м
+    double returnVelGain = 1.5;       // притормаживание сверх предела возврата: ускорение = это × превышение скорости к точке, 1/с (не больше 2·returnBrakeAccel)
     // автопилот
     double apSpeedKp = 0.15, apSpeedKi = 0.01;   // доли массы на (м/с)
 };
@@ -476,13 +476,13 @@ public:
             if (returning_ && returnCap_ > 0) { const double em = std::hypot(ex, ey); if (em > cfg_.returnErrMaxM && em > 1e-9) { exl *= cfg_.returnErrMaxM / em; eyl *= cfg_.returnErrMaxM / em; } }
             law.X = lawX_->compute(dead(exl, posDead()), vx, umaxX);
             law.Y = lawY_->compute(dead(eyl, posDead()), vy, umaxY);
-            // и если судно идёт к заданной точке быстрее предела возврата — притормаживание по его скорости (не сильнее returnBrakeAccel)
+            // и если судно идёт к заданной точке быстрее предела возврата — притормаживание по его скорости (не сильнее 2·returnBrakeAccel)
             if (returning_ && returnHoldS_ <= 0 && returnCap_ > 0) {
                 const double tn = sp_.n - est.n, te = sp_.e - est.e, td = std::hypot(tn, te);
                 if (td > 0.5) {
-                    const double vt = (est.vn * tn + est.ve * te) / td, over = vt - returnCap_;
+                    const double vt = (est.vn * tn + est.ve * te) / td, over = vt - 0.9 * returnCap_;   // с запасом 10 % на волну и порывы
                     if (over > 0) {
-                        const double acc = std::min(cfg_.returnVelGain * over, cfg_.returnBrakeAccel);
+                        const double acc = std::min(cfg_.returnVelGain * over, 2.0 * cfg_.returnBrakeAccel);
                         law.X -= in_.m11 * acc * toBodyX(tn / td, te / td); law.Y -= in_.m22 * acc * toBodyY(tn / td, te / td);
                     }
                 }
