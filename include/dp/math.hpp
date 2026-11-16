@@ -2,6 +2,7 @@
 // Система координат: NED (север, восток, вниз). Курс отсчитывается от севера по часовой стрелке.
 // Связанные оси судна: x — к носу, y — на правый борт, z — вниз.
 #pragma once
+#include <random>
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -123,5 +124,24 @@ inline double median(std::vector<double> v) {
     const size_t n = v.size();
     return n % 2 ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
 }
+
+
+// Генератор случайных чисел с одинаковым результатом на всех компьютерах. std::mt19937 стандартизован, а
+// std::normal_distribution и std::uniform_real_distribution — нет: на Mac (libc++) и Linux (libstdc++) они дают разные
+// числа при одном начальном числе, и имитатор вёл себя по-разному. Нормальное — по Бокса — Мюллеру.
+class PortableRng {
+public:
+    explicit PortableRng(unsigned seed = 5489u) : g_(seed) {}
+    double uniform() { return (static_cast<double>(g_()) + 0.5) / 4294967296.0; }            // (0; 1)
+    double uniform(double a, double b) { return a + (b - a) * uniform(); }
+    double normal() {
+        if (have_) { have_ = false; return spare_; }
+        const double u1 = uniform(), u2 = uniform(), r = std::sqrt(-2.0 * std::log(u1)), t = 2.0 * 3.14159265358979323846 * u2;
+        spare_ = r * std::sin(t); have_ = true; return r * std::cos(t);
+    }
+    double normal(double mean, double sigma) { return mean + sigma * normal(); }
+private:
+    std::mt19937 g_; double spare_ = 0; bool have_ = false;
+};
 
 }  // namespace dp

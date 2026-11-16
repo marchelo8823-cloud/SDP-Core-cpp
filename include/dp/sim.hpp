@@ -25,11 +25,9 @@ public:
         : vcfg_(v), dyn_(v, env), target_(env), sc_(std::move(sc)), rng_(seed) {
         for (const auto& t : th) ths_.emplace_back(t);
         gyroBias_.resize(static_cast<size_t>(std::max(0, sc_.gyros)));
-        std::normal_distribution<double> nb(0.0, 0.05);
-        for (auto& b : gyroBias_) b = deg2rad(nb(rng_));
+        for (auto& b : gyroBias_) b = deg2rad(rng_.normal(0.0, 0.05));
         mruBias_.resize(static_cast<size_t>(std::max(0, sc_.mrus)));
-        std::normal_distribution<double> mb(0.0, 0.02);
-        for (auto& b : mruBias_) b = {deg2rad(mb(rng_)), deg2rad(mb(rng_))};
+        for (auto& b : mruBias_) { const double r = deg2rad(rng_.normal(0.0, 0.02)); b = {r, deg2rad(rng_.normal(0.0, 0.02))}; }
         nextT_.assign(32, 0.0);
     }
 
@@ -88,7 +86,7 @@ public:
         SensorFrame fr;
         fr.time = t_;
         const VesselState& s = dyn_.state();
-        std::normal_distribution<double> g(0.0, 1.0);
+        auto g = [this](PortableRng&) { return rng_.normal(); };
         auto due = [&](int slot, double rate) {
             if (rate <= 0) return false;
             if (t_ + 1e-9 >= nextT_[static_cast<size_t>(slot)]) { nextT_[static_cast<size_t>(slot)] = t_ + 1.0 / rate; return true; }
@@ -178,7 +176,7 @@ private:
     VesselDynamics dyn_;
     EnvCfg target_;
     SimSensorsCfg sc_;
-    std::mt19937 rng_;
+    PortableRng rng_;
     std::vector<ThrusterSim> ths_;
     std::vector<double> gyroBias_, nextT_;
     std::vector<std::pair<double, double>> mruBias_;
