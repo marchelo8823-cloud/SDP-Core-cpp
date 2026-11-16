@@ -53,6 +53,9 @@ struct ControlCfg {
     // торможение дрейфа в начале возврата: опорная точка стартует со скоростью судна и гасит её с этим ускорением, м/с²
     // (не догоняет судно полным упором; решение владельца 16.11.2026)
     double returnBrakeAccel = 0.05;
+    double returnSettleM = 1.0;
+    double returnErrMaxM = 1.0;
+    double returnVelGain = 0.5;       // притормаживание сверх предела возврата: ускорение = это × превышение скорости к точке, 1/с       // при возврате ошибка положения для закона не больше этого, м       // выдержка в начале возврата длится, пока погрешность фильтра больше этого, м (не дольше 30 с сверх)
     // автопилот
     double apSpeedKp = 0.15, apSpeedKi = 0.01;   // доли массы на (м/с)
 };
@@ -387,9 +390,15 @@ public:
                     const double jn = est.n - (holdLastN_ + holdLastVn_ * dt), je = est.e - (holdLastE_ + holdLastVe_ * dt);
                     if (holdLastSet_ && holdExtS_ < 30.0 && (std::hypot(jn, je) > 0.3 || est.softCorrecting)) { holdExtS_ += std::max(0.0, returnHold0_ - returnHoldS_); returnHoldS_ = returnHold0_; }   // не дольше 30 с сверх выдержки
                     holdLastN_ = est.n; holdLastE_ = est.e; holdLastVn_ = est.vn; holdLastVe_ = est.ve; holdLastSet_ = true;
+                    // и пока погрешность фильтра после счисления больше returnSettleM — оценке ещё нельзя верить (задача №17)
+                    if (holdExtS_ < 30.0 && est.posUncertM > cfg_.returnSettleM && returnHoldS_ < dt + 1e-9) { holdExtS_ += dt; returnHoldS_ += dt; }
                     returnHoldS_ -= dt;
-                    ref_.resetMoving(est.n, est.e, est.psi, est.vn, est.ve);
-                    double dn, de; bodyToNe(pvx_, pvy_, est.psi, dn, de); pref_.resetMoving(est.n + dn, est.e + de, est.psi, est.vn, est.ve);
+                    // опорная точка стоит на оценке, а её скорость гасится от скорости судна с ускорением returnBrakeAccel —
+                    // дрейф тормозится сразу и мягко, а не рывком после выдержки (задача №17)
+                    double hvn = ref_.vn, hve = ref_.ve; const double hv = std::hypot(hvn, hve), dv = cfg_.returnBrakeAccel * dt;
+                    if (hv > dv) { hvn -= hvn / hv * dv; hve -= hve / hv * dv; } else { hvn = hve = 0; }
+                    ref_.resetMoving(est.n, est.e, est.psi, hvn, hve);
+                    double dn, de; bodyToNe(pvx_, pvy_, est.psi, dn, de); pref_.resetMoving(est.n + dn, est.e + de, est.psi, hvn, hve);
                 }
                 if (pivotOff()) {   // удерживается точка центра вращения; положение судна следует за курсом задания
                     pref_.moveTo(dt, sp_.n, sp_.e, 0, 0, eff());
@@ -461,8 +470,23 @@ public:
             const double ex = toBodyX(eN, eE), ey = toBodyY(eN, eE);
             const double vx = toBodyX(vN, vE), vy = toBodyY(vN, vE);
             const double umaxX = 0.95 * cap.X, umaxY = 0.95 * cap.Y;
-            law.X = lawX_->compute(dead(ex, posDead()), vx, umaxX);
-            law.Y = lawY_->compute(dead(ey, posDead()), vy, umaxY);
+            // Возврат после потери положения (задача №17): ошибка положения, на которую работает закон, ограничена returnErrMaxM —
+            // отставшее от опорной точки судно догоняет её не быстрее ≈ wn·returnErrMaxM/(2ζ), а не разгоняется до 0,6 м/с
+            double exl = ex, eyl = ey;
+            if (returning_ && returnCap_ > 0) { const double em = std::hypot(ex, ey); if (em > cfg_.returnErrMaxM && em > 1e-9) { exl *= cfg_.returnErrMaxM / em; eyl *= cfg_.returnErrMaxM / em; } }
+            law.X = lawX_->compute(dead(exl, posDead()), vx, umaxX);
+            law.Y = lawY_->compute(dead(eyl, posDead()), vy, umaxY);
+            // и если судно идёт к заданной точке быстрее предела возврата — притормаживание по его скорости (не сильнее returnBrakeAccel)
+            if (returning_ && returnHoldS_ <= 0 && returnCap_ > 0) {
+                const double tn = sp_.n - est.n, te = sp_.e - est.e, td = std::hypot(tn, te);
+                if (td > 0.5) {
+                    const double vt = (est.vn * tn + est.ve * te) / td, over = vt - returnCap_;
+                    if (over > 0) {
+                        const double acc = std::min(cfg_.returnVelGain * over, cfg_.returnBrakeAccel);
+                        law.X -= in_.m11 * acc * toBodyX(tn / td, te / td); law.Y -= in_.m22 * acc * toBodyY(tn / td, te / td);
+                    }
+                }
+            }
             // упреждение по скорости опорной точки
             velFFx = toBodyX(ref_.vn, ref_.ve); velFFy = toBodyY(ref_.vn, ref_.ve);
             law.X += in_.d11 * velFFx + in_.q11 * std::fabs(velFFx) * velFFx + in_.m11 * toBodyX(ref_.an, ref_.ae);
@@ -585,7 +609,8 @@ private:
         ControlCfg c = cfg_;
         if (capSpeed_ > 0) { c.refMaxSpeed = std::min(c.refMaxSpeed, capSpeed_); c.refCapTotal = true; }
         if (returning_ && returnCap_ > 0) { c.refMaxSpeed = std::min(c.refMaxSpeed, returnCap_); c.refCapTotal = true; }
-        if (returning_) c.refAccel = std::max(c.refAccel, c.returnBrakeAccel);
+        // при возврате тормозит опорная точка с returnBrakeAccel, а разгоняется к точке — с обычным refAccel (не догоняет рывком)
+        if (returning_ && std::hypot(ref_.vn, ref_.ve) > returnCap_ + 0.01) c.refAccel = std::max(c.refAccel, c.returnBrakeAccel);
         if (capRot_ > 0) c.refMaxRotDegS = std::min(c.refMaxRotDegS, capRot_);
         return c;
     }
