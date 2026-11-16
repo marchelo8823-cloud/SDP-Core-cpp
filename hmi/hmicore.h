@@ -5,6 +5,8 @@
 #include <QTimer>
 #include <QVariant>
 #include <QStringList>
+#include <QHash>
+#include <QDateTime>
 #include <deque>
 #include <memory>
 #include "dp/core.hpp"
@@ -53,6 +55,9 @@ private:
     QVariantList thr_, sen_, alm_, trk_;
     QStringList log_;
     std::deque<std::pair<double, double>> trail_;
+    std::deque<double> loadHist_;                                 // загрузка движителей раз в 2 с за 5 мин
+    QHash<QString, QString> alarmTime_;                           // когда тревога появилась (часы пульта)
+    void sample(double load);
     double lastTrail_ = -1e9;
     QSet<QString> acked_;
 };
