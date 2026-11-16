@@ -65,6 +65,7 @@ struct AllocResult {
     std::vector<ThrusterCmd> cmds;
     Wrench achieved;
     bool saturated = false;
+    bool turning = false;         // колонка ещё разворачивается (больше 15° до нужного угла): упор временно только вдоль её нынешнего направления
     double utilization = 0;       // максимальная загрузка движителя, 0..1
     std::vector<std::string> softZone;   // колонки, оставленные в «нежелательной» части запретного сектора (иначе запрос не выполнить)
 };
@@ -153,6 +154,7 @@ private:
         std::vector<int> mode(nt, 0);                 // 0 — свободный азимут (2 переменные), 1 — движение вдоль линии
         std::vector<double> lineAngle(nt, 0.0);       // угол линии для режима 1, рад
         std::vector<double> desiredDeg(nt, 0.0);
+        bool turning = false;
 
         // проход 1: все азимутальные свободны
         Sol s1 = solveScaled(tau, mode, lineAngle, powerScale);
@@ -166,7 +168,7 @@ private:
             desiredDeg[i] = allowed;
             const double err = std::fabs(rad2deg(wrapPi(deg2rad(allowed - act))));
             if (err > 15.0) {                         // колонка ещё не повернулась — упор по текущему направлению
-                mode[i] = 1; lineAngle[i] = deg2rad(act);
+                mode[i] = 1; lineAngle[i] = deg2rad(act); turning = true;
             } else if (std::fabs(allowed - des) > 0.5) {  // запретный сектор — ограничиваем линией
                 mode[i] = 1; lineAngle[i] = deg2rad(allowed);
             }
@@ -177,6 +179,7 @@ private:
         AllocResult res;
         res.achieved = s2.achieved;
         res.saturated = s2.saturated;
+        res.turning = turning;
         for (size_t i = 0; i < nt; ++i) {
             const auto& t = th_[i];
             ThrusterCmd c;

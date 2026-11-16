@@ -51,6 +51,19 @@ int main(int argc, char** argv) {
       CHECK(ok && !c.simEnabled && c.inputs.size() == 10 && c.inputs[0].transport == "udp" && c.inputs[0].port == 10001, "работа от датчиков: входы с листа «Датчики»"); }
     { AppCfg c; BookReport r; const bool ok = loadShipBook(bad + "/секторы.xlsx", c, r);
       CHECK(ok && c.thrusters[0].forbidden.size() == 2 && std::fabs(c.thrusters[0].forbidden[1].fromDeg - 60) < 1e-9 && std::fabs(c.thrusters[0].rateFracPerS - 0.15) < 1e-9, "запретные сектора и темп 15 %/с прочитаны"); }
+    { AppCfg c; BookReport r; const bool ok = loadShipBook(bad + "/встречный_упор.xlsx", c, r);
+      for (auto& e : r.errors) std::printf("     %s\n", e.c_str());
+      CHECK(ok && std::fabs(c.thrusters[0].prefDeg - 90) < 1e-9 && std::fabs(c.thrusters[0].preloadPct - 20) < 1e-9 && std::fabs(c.thrusters[1].prefDeg - 270) < 1e-9 && c.thrusters[2].preloadPct == 0,
+            "встречный упор колонок (угол и упор) прочитан, у туннельных — нет");
+      CHECK(std::fabs(c.est.drDrift5MinM - 9) < 1e-9, "«Уход за 5 мин без положения» прочитан"); }
+    { AppCfg c; BookReport r; const bool ok = loadShipBook(bad + "/встречный_упор_без_угла.xlsx", c, r);
+      CHECK(!ok && has(r.errors, "встречный упор задаётся парой"), "встречный упор без угла — ошибка с пояснением"); }
+    { AppCfg c; BookReport r; const bool ok = loadShipBook(bad + "/встречный_упор_много.xlsx", c, r);
+      CHECK(!ok && has(r.errors, "от 5 до 50 %"), "встречный упор 70 % — ошибка «от 5 до 50 %»"); }
+    { AppCfg c; BookReport r; const bool ok = loadShipBook(bad + "/уход_ноль.xlsx", c, r);
+      CHECK(!ok && has(r.errors, "должен быть больше нуля"), "уход за 5 мин = 0 — ошибка"); }
+    { AppCfg c; BookReport r; loadShipBook(argv[2], c, r);
+      CHECK(c.thrusters[0].preloadPct == 0 && std::fabs(c.est.drDrift5MinM - 14) < 1e-9, "пример без встречного упора; уход по умолчанию 14 м"); }
     { AppCfg c; BookReport r; const bool ok = loadShipBook(bad + "/выдача.xlsx", c, r);
       for (auto& e : r.errors) std::printf("     %s\n", e.c_str());
       CHECK(ok && c.links.size() == 1 && c.links[0].entries.size() == 2 && c.links[0].port == 1502, "лист «Выдача»: линия Modbus и два регистра"); }

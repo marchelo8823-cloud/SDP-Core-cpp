@@ -136,6 +136,7 @@ inline bool toJson(const xlsx::Book& book, std::string& out, BookReport& rep) {
         if (K.opt("Коэффициент момента ветра Cn", x, 1, "значение ядра по умолчанию")) j += ",\"cn\":" + num(x);
         if (K.opt("Боковая площадь подводной части", x, 1, "0,85 × длина × осадка")) j += ",\"currentLateralArea\":" + num(x);
         j += "}";
+        if (K.opt("Уход за 5 мин без положения", x, 1, "14 м (по имитатору)")) j += ",\"estimator\":{\"drDrift5MinM\":" + num(x) + "}";
         double lat = 0, lon = 0; const bool a = K.need("Широта района работ", lat), b = K.need("Долгота района работ", lon);
         if (a && b) { if (std::fabs(lat) > 90 || std::fabs(lon) > 180) rep.errors.push_back(K.where("Широта района работ") + ": широта до ±90°, долгота до ±180° (в градусах с долями)"); j += ",\"origin\":{\"lat\":" + num(lat) + ",\"lon\":" + num(lon) + "}"; }
     }
@@ -164,6 +165,14 @@ inline bool toJson(const xlsx::Book& book, std::string& out, BookReport& rep) {
             if (D.opt(r, "Порог расхождения, %", v, 1, "")) j += ",\"fbDiffPct\":" + num(v);
             if (D.opt(r, "Порог по углу, °", v, 1, "")) j += ",\"fbDiffAngleDeg\":" + num(v);
             if (D.opt(r, "Выдержка расхождения, с", v, 1, "")) j += ",\"fbDiffDelayS\":" + num(v);
+            if (jt == "azimuth") {   // встречный упор (bias): колонка постоянно держит упор вдоль предпочтительного угла, малые изменения силы — без разворота
+                double pd = 0, pp = 0; const bool hp = D.opt(r, "Предпочтительный угол, °", pd, 1, ""), hq = D.opt(r, "Встречный упор, %", pp, 1, "");
+                if (hp && hq) {
+                    if (pp < 5 || pp > 50) rep.errors.push_back(D.where(r, "Встречный упор, %") + ": от 5 до 50 %");
+                    else j += ",\"prefDeg\":" + num(pd) + ",\"preloadPct\":" + num(pp);
+                }
+                else if (hp != hq) rep.errors.push_back(D.where(r, hp ? "Встречный упор, %" : "Предпочтительный угол, °") + ": встречный упор задаётся парой — угол и упор");
+            }
             const std::string fs = D.cell(r, "Запретные сектора, °");
             if (!fs.empty()) { std::string sj; if (sectors(fs, sj)) j += ",\"forbidden\":" + sj; else rep.errors.push_back(D.where(r, "Запретные сектора, °") + ": формат «от-до; от-до», например «240-300; 60-120»"); }
             j += "}";
