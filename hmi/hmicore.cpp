@@ -31,7 +31,7 @@ void HmiCore::command(const QString& line) {
     say(("> " + l).toStdString());
     const bool hadShip = core_.hasShip();
     core_.command(l.toStdString());
-    if (core_.hasShip() != hadShip || l.startsWith("ship load")) { trail_.clear(); emit shipChanged(); }
+    if (core_.hasShip() != hadShip || l.startsWith("ship load")) { trail_.clear(); loadHist_.clear(); emit shipChanged(); }
     refresh();
 }
 void HmiCore::loadShip(const QString& p) { command("ship load " + QString::fromStdString(localPath(p))); }
