@@ -59,9 +59,10 @@ ApplicationWindow {
             else { win.armedCmd = cmd; armT.restart() }
         }
     }
-    readonly property bool posLossOrReturn: { for (let i = 0; i < core.alarms.length; ++i) { const c = core.alarms[i].code; if (c === "POS_DROPOUT" || c === "POS_ALL_REJ" || c === "POS_RETURN") return true } return false }
+    readonly property bool posLossOrReturn: { for (let i = 0; i < core.alarms.length; ++i) { const c = core.alarms[i].code; if (c === "POS_DROPOUT" || c === "POS_ALL_REJ" || c === "POS_RETURN" || c === "POS_LOST") return true } return false }
 
     // ------------------------------------------------ состояние для шапки и подсказок
+    function driftTxt(v) { return Theme.num(v, v < 10 ? 1 : 0) }   // вероятный уход: с десятыми до 10 м, как в тревоге POS_DROPOUT
     function mmss(t) { t = Math.max(0, Math.round(t)); return Math.floor(t / 60) + ":" + ("0" + (t % 60)).slice(-2) }
     readonly property bool active: s.stateCode === 3
     readonly property bool hdgCut: active && s.hdgValid === false                 // курса нет, упор снят ядром
@@ -75,9 +76,9 @@ ApplicationWindow {
         if (hdgCut) return { label: "УПОР СНЯТ — НЕТ КУРСА", sub: "Гирокомпасов нет " + Theme.num(s.hdgLostS, 0) + " с · автоматика не держит судно", c: Theme.alarm }
         if (posCut) return { label: "УПОР СНЯТ — НЕТ ПОЛОЖЕНИЯ", sub: "Нет систем положения " + mmss(s.refLostS) + " · счисление закончилось, автоматика не держит судно", c: Theme.alarm }
         if (hdgDr) return { label: "СЧИСЛЕНИЕ КУРСА", sub: "Нет гирокомпасов · упор будет снят через " + Theme.num(Math.max(0, s.hdgDrS - s.hdgLostS), 1) + " с", c: Theme.warn }
-        if (posDr) return { label: "СЧИСЛЕНИЕ ПОЛОЖЕНИЯ", sub: "Нет систем положения " + mmss(s.refLostS) + " · вероятный уход до " + Theme.num(s.drDriftM, 0) + " м", c: Theme.warn }
+        if (posDr) return { label: "СЧИСЛЕНИЕ ПОЛОЖЕНИЯ", sub: "Нет систем положения " + mmss(s.refLostS) + " · вероятный уход до " + driftTxt(s.drDriftM) + " м", c: Theme.warn }
         if (s.returning) return { label: "ВОЗВРАТ В ТОЧКУ", sub: "До точки " + Theme.num(s.opErr, 1) + " м · «Держать здесь» — остаться", c: Theme.accent }
-        if (s.modeCode === 3) return { label: "УДЕРЖАНИЕ КУРСА", sub: "Курс " + Theme.deg(s.refHdg) + " · загрузка " + Theme.num(s.load * 100, 0) + " %", c: Theme.ok }
+        if (s.modeCode === 3) return { label: "УДЕРЖАНИЕ КУРСА", sub: "Курс " + Theme.deg(s.opValid ? s.spHdg : s.refHdg) + " · загрузка " + Theme.num(s.load * 100, 0) + " %", c: Theme.ok }
         return { label: "УДЕРЖАНИЕ ПОЗИЦИИ", sub: "Отклонение " + Theme.num(s.opErr, 1) + " м · курс " + Theme.deg(s.hdg) + " · загрузка " + Theme.num(s.load * 100, 0) + " %", c: Theme.ok }
     }
     readonly property var advice: {
@@ -88,7 +89,7 @@ ApplicationWindow {
         if (posCut) return { c: Theme.alarm, steps: [
             "Возьмите управление: джойстик или посты управления движителями.",
             "Проверьте системы положения: питание, связь, поправки.",
-            "⚠ Когда положение вернётся, удержание продолжится само — будьте готовы." ] }
+            "⚠ Когда положение вернётся, судно плавно пойдёт в точку; остаться на месте — «Держать здесь»." ] }
         if (hdgDr) return { c: Theme.warn, steps: [
             "Курс держится по счислению, через " + Theme.num(Math.max(0, s.hdgDrS - s.hdgLostS), 1) + " с упор будет снят.",
             "Готовьтесь взять управление вручную.",
@@ -139,13 +140,13 @@ ApplicationWindow {
                     color: win.posCut ? Theme.alarm : win.posDr ? Theme.warn : Theme.text
                 }
                 Label {
-                    text: win.posDr ? "по модели · измерений нет " + win.mmss(s.refLostS)
+                    text: win.posCut ? "нет положения: счисление закончилось · без измерений " + win.mmss(s.refLostS) : win.posDr ? "по модели · измерений нет " + win.mmss(s.refLostS)
                         : win.active && s.modeCode === 4 ? "вдоль " + (s.opAlong >= 0 ? "+" : "") + Theme.num(s.opAlong, 1) + " м · поперёк " + (s.opCross >= 0 ? "+" : "") + Theme.num(s.opCross, 1) + " м" : "режим «Позиция» не включён"
-                    color: win.posDr ? Theme.warn : Theme.text; font.pixelSize: 14
+                    color: win.posCut ? Theme.alarm : win.posDr ? Theme.warn : Theme.text; font.pixelSize: 14
                 }
                 Label {
-                    text: win.posDr ? "Вероятный уход до " + Theme.num(s.drDriftM, 0) + " м — точное положение неизвестно" : "Источник: " + (s.posSource || "—")
-                    color: win.posDr ? Theme.warn : Theme.dim; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true
+                    text: win.posCut ? "Положение неизвестно — систем положения нет" : win.posDr ? "Вероятный уход до " + win.driftTxt(s.drDriftM) + " м — точное положение неизвестно" : "Источник: " + (s.posSource || "—")
+                    color: win.posCut ? Theme.alarm : win.posDr ? Theme.warn : Theme.dim; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true
                 }
             }
             // мишень: отклонение в осях судна (нос вверх), масштаб — 10 м до края
@@ -161,7 +162,7 @@ ApplicationWindow {
                     g.beginPath(); g.arc(c, c, 5 * k, 0, 2 * Math.PI); g.stroke()
                     g.beginPath(); g.moveTo(c, c - r); g.lineTo(c, c + r); g.moveTo(c - r, c); g.lineTo(c + r, c); g.stroke()
                     g.fillStyle = Theme.dim; g.font = "10px '" + Theme.font + "'"; g.textAlign = "center"; g.fillText("нос", c, 14); g.fillText("5 м", c + 5 * k * 0.72 + 8, c - 5 * k * 0.72)
-                    if (!win.active || s.modeCode !== 4) return
+                    if (!win.active || s.modeCode !== 4 || win.posCut) return   // нет положения — точку не рисуем
                     if (win.posDr && s.drDriftM > 0.2) {
                         g.strokeStyle = Theme.warn; g.fillStyle = Theme.tint(Theme.warn, 0.12); g.lineWidth = 1.5
                         g.beginPath(); g.arc(c, c, Math.min(r, s.drDriftM * k), 0, 2 * Math.PI); g.fill(); g.stroke()
@@ -192,8 +193,8 @@ ApplicationWindow {
                 spacing: 8
                 Label {
                     Layout.fillWidth: true; color: Theme.text; font.pixelSize: 14; elide: Text.ElideRight
-                    text: { let n = 0; for (let i = 0; i < core.thrusters.length; ++i) if (core.thrusters[i].taken) ++n
-                            return "Движители: " + n + " из " + core.thrusters.length + " в управлении" + (win.hdgCut || win.posCut ? ", команды 0 %" : "") }
+                    text: { let n = 0, f = 0; for (let i = 0; i < core.thrusters.length; ++i) { if (core.thrusters[i].taken && !core.thrusters[i].fbLost) ++n; if (core.thrusters[i].fbLost) ++f }
+                            return "Движители: " + n + " из " + core.thrusters.length + " в управлении" + (f > 0 ? ", без обратной связи: " + f : "") + (win.hdgCut || win.posCut ? ", команды 0 %" : "") }
                 }
                 Btn { text: "Взять все"; enabled: s.hasShip === true; onClicked: core.command("thr_take all") }
                 ConfirmBtn { label: "Снять все"; cmd: "thr_release all"; enabled: s.hasShip === true }
@@ -368,7 +369,7 @@ ApplicationWindow {
             ListView {
                 Layout.fillWidth: true; Layout.fillHeight: true; clip: true
                 model: core.log
-                delegate: Label { text: modelData; color: modelData.indexOf("ТРЕВОГА") >= 0 ? Theme.warn : Theme.dim; font.pixelSize: 12; font.family: Theme.mono; width: ListView.view.width; elide: Text.ElideRight }
+                delegate: Label { text: modelData; textFormat: Text.PlainText; color: modelData.indexOf("ТРЕВОГА") >= 0 ? Theme.warn : Theme.dim; font.pixelSize: 12; font.family: Theme.mono; width: ListView.view.width; elide: Text.ElideRight }
             }
             TextField { id: cmd; Layout.fillWidth: true; implicitHeight: 34; placeholderText: "команда ядра (help — список)"; font.family: Theme.mono; font.pixelSize: 13
                         onAccepted: { core.command(text); text = "" } }
@@ -426,7 +427,7 @@ ApplicationWindow {
     // ------------------------------------------------ вкладки и своё рабочее место
     property int tabIndex: 0
     readonly property int sensorBad: { let n = 0; for (let i = 0; i < core.sensors.length; ++i) if (!core.sensors[i].valid || core.sensors[i].rejected) ++n; return n }
-    readonly property int thrBad: { let n = 0; for (let i = 0; i < core.thrusters.length; ++i) if (core.thrusters[i].failed) ++n; return n }
+    readonly property int thrBad: { let n = 0; for (let i = 0; i < core.thrusters.length; ++i) if (core.thrusters[i].failed || core.thrusters[i].fbLost) ++n; return n }
     property bool wsEdit: false
     readonly property var wsPanels: ["План", "Курс", "Отклонение", "Режим", "Точка / что делать", "Тревоги", "Датчики", "Среда", "Анализ последствий", "Журнал", "Загрузка", "Движители", "Тренд отклонения", "Тренд загрузки", "Пусто"]
     function wsDefault() {
@@ -440,7 +441,16 @@ ApplicationWindow {
     function opsLoad() {
         try {
             const o = JSON.parse(core.setting("operators"))
-            if (o && o.list && o.list[o.cur]) return o
+            const okSet = function (w) {   // повреждённый файл настроек не должен ломать пульт
+                if (!w || !Array.isArray(w.sets) || w.sets.length !== 3 || typeof w.cur !== "number" || w.cur < 0 || w.cur > 2) return false
+                for (let i = 0; i < 3; ++i) if (!w.sets[i] || typeof w.sets[i].name !== "string" || !Array.isArray(w.sets[i].cells) || w.sets[i].cells.length !== 5) return false
+                return true
+            }
+            if (o && o.list && typeof o.cur === "string" && okSet(o.list[o.cur])) {
+                for (const k in o.list) if (!okSet(o.list[k])) delete o.list[k]
+                if (!o.list["Общий"]) o.list["Общий"] = wsDefault()
+                return o
+            }
         } catch (e) {}
         let w = wsDefault()
         try { const old = JSON.parse(core.setting("workspace")); if (old && old.sets && old.sets.length === 3) w = old } catch (e) {}   // наборы прежней версии
@@ -489,6 +499,7 @@ ApplicationWindow {
                   "Тренд отклонения": cTrDev, "Тренд загрузки": cTrLoad })[n] || cEmpty
     }
 
+    readonly property string stLabel: st.label            // для проверки без экрана (--expect-state)
     function levelLetter(l) { return l === 0 ? "E" : l === 1 ? "A" : l === 2 ? "W" : "I" }
 
     ColumnLayout {
@@ -512,7 +523,7 @@ ApplicationWindow {
                 Layout.preferredWidth: 270; Layout.fillHeight: true
                 ColumnLayout {
                     anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; anchors.topMargin: 6; anchors.bottomMargin: 6; spacing: 3
-                    Label { text: "Вахта: " + win.ops.cur; color: Theme.accent; font.pixelSize: 13; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
+                    Label { text: "Вахта: " + win.ops.cur; textFormat: Text.PlainText; color: Theme.accent; font.pixelSize: 13; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
                     Label { text: s.shipName || "судно не загружено"; color: s.shipName ? Theme.text : Theme.dim; font.pixelSize: 16; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
                     RowLayout {
                         spacing: 8
@@ -633,7 +644,7 @@ ApplicationWindow {
                     RowLayout {
                         anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 10; spacing: 10
                         Label { text: win.wsEdit ? "НАСТРОЙКА РАБОЧЕГО МЕСТА" : "РАБОЧЕЕ МЕСТО"; color: win.wsEdit ? Theme.accent : Theme.dim; font.bold: true; font.pixelSize: 14 }
-                        Label { text: win.wsEdit ? "Удержание продолжается." : "Заступающий на вахту выбирает себя в списке. Шапка, тревоги и режим закреплены всегда."
+                        Label { text: win.wsEdit ? "Настройка экрана не меняет ни режим, ни команды движителям." : "Заступающий на вахту выбирает себя в списке. Шапка и тревоги видны всегда; режим — на вкладке «Главный»."
                                 color: Theme.text; font.pixelSize: 14; Layout.fillWidth: true; elide: Text.ElideRight }
                         Label { text: "Оператор"; color: Theme.dim; font.pixelSize: 14 }
                         ComboBox {
@@ -760,8 +771,8 @@ ApplicationWindow {
                                 readonly property real dev: modelData.fb ? Math.abs(modelData.cmdPct - modelData.fbPct) : 0
                                 Label { text: modelData.id; color: Theme.text; font.bold: true; font.pixelSize: 15; Layout.fillWidth: true; Layout.preferredWidth: 1 }
                                 Label { text: modelData.type; color: Theme.text; font.pixelSize: 14; Layout.fillWidth: true; Layout.preferredWidth: 1 }
-                                Label { text: modelData.failed ? "ОТКАЗ" : !modelData.enabled ? "вне работы" : (win.hdgCut || win.posCut) && modelData.taken ? "упор снят" : modelData.taken ? "в управлении" : "не взят"
-                                        color: modelData.failed || ((win.hdgCut || win.posCut) && modelData.taken) ? Theme.alarm : modelData.taken ? Theme.ok : Theme.dim; font.pixelSize: 14; Layout.fillWidth: true; Layout.preferredWidth: 1 }
+                                Label { text: modelData.failed ? "ОТКАЗ" : modelData.fbLost ? "нет обратной связи" : !modelData.enabled ? "вне работы" : (win.hdgCut || win.posCut) && modelData.taken ? "упор снят" : modelData.taken ? "в управлении" : "не взят"
+                                        color: modelData.failed || ((win.hdgCut || win.posCut) && modelData.taken) ? Theme.alarm : modelData.fbLost ? Theme.warn : modelData.taken ? Theme.ok : Theme.dim; font.pixelSize: 14; Layout.fillWidth: true; Layout.preferredWidth: 1 }
                                 Label { text: Theme.num(modelData.cmdPct, 0); color: Theme.accent; font.family: Theme.mono; font.pixelSize: 15; Layout.fillWidth: true; Layout.preferredWidth: 1 }
                                 Label { text: modelData.fb ? Theme.num(modelData.fbPct, 0) : "—"; color: Theme.fb; font.family: Theme.mono; font.pixelSize: 15; Layout.fillWidth: true; Layout.preferredWidth: 1 }
                                 Label { text: modelData.fb ? Theme.num(dev, 0) + " %" : "—"; color: dev > 10 ? Theme.warn : Theme.dim; font.family: Theme.mono; font.pixelSize: 15; Layout.fillWidth: true; Layout.preferredWidth: 1 }

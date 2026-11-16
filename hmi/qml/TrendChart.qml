@@ -24,7 +24,11 @@ Rectangle {
         RowLayout {
             Layout.fillWidth: true
             Label { text: root.title; color: Theme.dim; font.pixelSize: Theme.fsSmall; font.bold: true; font.capitalization: Font.AllUppercase; font.letterSpacing: 1; Layout.fillWidth: true }
-            Label { text: root.values.length ? Theme.num(root.values[root.values.length - 1] * root.scale, root.digits) + " " + root.unit : "—"; color: Theme.text; font.family: Theme.mono; font.pixelSize: 20 }
+            Label {
+                readonly property real last: root.values.length ? root.values[root.values.length - 1] : NaN
+                text: isNaN(last) ? "нет данных" : Theme.num(last * root.scale, root.digits) + " " + root.unit + (Math.abs(last * root.scale) > root.maxv ? " ▲ выше шкалы" : "")
+                color: isNaN(last) ? Theme.dim : Math.abs(last * root.scale) > root.maxv ? Theme.warn : Theme.text; font.family: Theme.mono; font.pixelSize: 20
+            }
         }
         Canvas {
             id: cv
@@ -47,8 +51,16 @@ Rectangle {
                 }
                 if (v.length < 2) return
                 g.strokeStyle = root.lineColor; g.lineWidth = 2; g.beginPath()
-                for (let i = 0; i < v.length; ++i) { const x = W - (v.length - 1 - i) * W / (root.span - 1); if (i === 0) g.moveTo(x, y(v[i] * root.scale)); else g.lineTo(x, y(v[i] * root.scale)) }
+                let pen = false   // NaN — нет данных: разрыв линии
+                for (let i = 0; i < v.length; ++i) {
+                    const x = W - (v.length - 1 - i) * W / (root.span - 1)
+                    if (isNaN(v[i])) { pen = false; continue }
+                    if (!pen) { g.moveTo(x, y(v[i] * root.scale)); pen = true } else g.lineTo(x, y(v[i] * root.scale))
+                }
                 g.stroke()
+                // выше шкалы — отметки у верхнего края
+                g.fillStyle = Theme.warn
+                for (let i = 0; i < v.length; ++i) if (!isNaN(v[i]) && Math.abs(v[i] * root.scale) > mx) { const x = W - (v.length - 1 - i) * W / (root.span - 1); g.fillRect(x - 1, root.symmetric && v[i] < 0 ? H - 4 : 0, 2, 4) }
             }
         }
         Label { text: "за " + root.spanText + (root.limit >= 0 ? " · красная линия — " + Theme.num(root.limit, 0) + " " + root.unit : ""); color: Theme.dim; font.pixelSize: 12 }
