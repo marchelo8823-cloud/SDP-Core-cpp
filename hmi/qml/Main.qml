@@ -463,7 +463,7 @@ ApplicationWindow {
     readonly property var opNames: Object.keys(ops.list).sort(function (a, b) { return a === "Общий" ? -1 : b === "Общий" ? 1 : a.localeCompare(b) })
     readonly property var ws: ops.list[ops.cur] || wsDefault()
     function saveOps(o) { ops = o; core.setSetting("operators", JSON.stringify(o)) }
-    function wsPick(i) { const w = JSON.parse(JSON.stringify(ws)); w.cur = i; saveWs(w) }   // для проверки без экрана (--ws-set)
+    function wsPick(i) { if (i < 0 || i > 2) return; const w = JSON.parse(JSON.stringify(ws)); w.cur = i; saveWs(w) }   // для проверки без экрана (--ws-set)
     function saveWs(w) { const o = JSON.parse(JSON.stringify(ops)); o.list[o.cur] = w; saveOps(o) }
     function setOperator(name) {
         if (!ops.list[name] || name === ops.cur) return
@@ -671,10 +671,11 @@ ApplicationWindow {
                                     onAccepted: if (win.addOperator(text)) text = "" }
                         Btn { text: "Добавить"; visible: win.wsEdit; implicitHeight: 38; enabled: opName.text.trim() !== ""; onClicked: if (win.addOperator(opName.text)) opName.text = "" }
                         Btn {   // удаление — двумя нажатиями, как команды ядру
-                            property bool armed: false
+                            property string armedFor: ""   // кого удалять: при смене оператора первое нажатие сбрасывается
+                            readonly property bool armed: armedFor !== "" && armedFor === win.ops.cur
                             text: armed ? "Ещё раз: удалить «" + win.ops.cur + "»" : "Удалить «" + win.ops.cur + "»"; visible: win.wsEdit && win.ops.cur !== "Общий"; implicitHeight: 38
-                            onClicked: { if (armed) { armed = false; win.removeOperator(win.ops.cur) } else { armed = true; delT.restart() } }
-                            Timer { id: delT; interval: 4000; onTriggered: parent.armed = false }
+                            onClicked: { if (armed) { const who = armedFor; armedFor = ""; win.removeOperator(who) } else { armedFor = win.ops.cur; delT.restart() } }
+                            Timer { id: delT; interval: 4000; onTriggered: parent.armedFor = "" }
                         }
                         Label { text: "Набор"; color: Theme.dim; font.pixelSize: 14 }
                         ComboBox {

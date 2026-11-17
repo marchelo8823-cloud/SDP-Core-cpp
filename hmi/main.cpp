@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
         else if (k == "--expect-state") expectState = next();
         else if (k == "--tab") tab = next().toInt();
         else if (k == "--click") clicks << next();          // настоящий щелчок мыши в середину кнопки с этой надписью
-        else if (k == "--ws-set") wsSet = next().toInt();   // набор рабочего места 0…2
+        else if (k == "--ws-set") { wsSet = next().toInt(); if (wsSet < 0 || wsSet > 2) { std::fprintf(stderr, "--ws-set: набор 0, 1 или 2\n"); return 1; } }   // набор рабочего места 0…2
         else if (k == "--ws-edit") wsEdit = true;           // режим «Настроить»
         else if (k == "--expect-taken") expectTaken = next().toInt();
         else if (k == "--size") { const QStringList p = next().split('x'); if (p.size() == 2) { w = p[0].toInt(); h = p[1].toInt(); } }
