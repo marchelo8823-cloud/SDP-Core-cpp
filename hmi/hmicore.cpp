@@ -151,9 +151,12 @@ void HmiCore::refresh() {
         }
         m["caGroups"] = gl; m["caAlarm"] = bad;
     } else { m["caClass"] = 0; m["caRan"] = false; m["caGroups"] = QVariantList(); m["caAlarm"] = false; }
+    { double la = 0, lo = 0; const bool g = core_.geo(es.n, es.e, la, lo); m["geoValid"] = g; m["lat"] = la; m["lon"] = lo; }   // координаты, если задано начало
+    m["gyroDisagree"] = es.gyroDisagree; m["gnssDisagree"] = es.gnssDisagree;
     s_ = m;
 
     QVariantList th;
+    QVariantMap busKW;                                          // мощность по группам отказа (ГРЩ), кВт
     if (const AppCfg* cfg = core_.ship()) {
         for (size_t i = 0; i < cfg->thrusters.size(); ++i) {
             const ThrusterCfg& t = cfg->thrusters[i];
@@ -173,18 +176,39 @@ void HmiCore::refresh() {
             x["cmdPct"] = cmdPct; x["cmdAng"] = std::fmod(cmdAng + 360.0, 360.0);
             x["fbPct"] = fbPct; x["fbAng"] = std::fmod(fbAng + 360.0, 360.0); x["fb"] = fb; x["failed"] = failed;
             x["thrustKN"] = (fbPct >= 0 ? fbPct / 100.0 * t.maxForward : fbPct / 100.0 * t.maxReverse) / 1000.0;
+            // мощность и обороты — оценка по упору и кривой движителя (как powerKW ядра), не измерение
+            const double frac = std::fabs(fb ? fbPct : cmdPct) / 100.0;
+            const bool runs = t.enabled && !failed;
+            x["powerKW"] = runs ? thrusterPowerKW(t, frac) : 0.0;
+            x["powerMaxKW"] = t.powerMaxKW;
+            x["rpmPct"] = runs ? thrusterRpmPct(t, frac) : 0.0;
+            x["group"] = QString::fromStdString(t.failGroups);
+            if (!t.failGroups.empty()) { const QString g = QString::fromStdString(t.failGroups); busKW[g] = busKW.value(g).toDouble() + x["powerKW"].toDouble(); }
             th.push_back(x);
         }
     }
     thr_ = th;
+    s_["busKW"] = busKW;
 
     QVariantList sn;
+    const std::vector<ChannelInfo> chans = core_.hub() ? core_.hub()->channels(core_.clock()) : std::vector<ChannelInfo>();   // один раз за обновление
     for (const auto& ss : es.sensors) {
         QVariantMap x; const QString id = QString::fromStdString(ss.id);
         const QString k = id.left(1);
         x["kind"] = k == "P" ? "положение" : k == "H" ? "курс" : k == "W" ? "ветер" : k == "M" ? "качка" : "?";
         x["id"] = id.mid(2); x["valid"] = ss.valid; x["age"] = ss.ageS < 1e8 ? ss.ageS : -1.0;
         x["state"] = QString::fromStdString(ss.state); x["rejected"] = ss.rejected;
+        // последние показания канала числами (только показ)
+        for (const auto& ci : chans) {
+            if (QString::fromStdString(ci.id) != x["id"].toString()) continue;
+            x["hdgDeg"] = ci.hdgDeg;
+            x["dHdg"] = std::remainder(ci.hdgDeg - rad2deg(es.psi), 360.0);   // расхождение с курсом решения
+            x["windMs"] = ci.windMs; x["windFromRel"] = std::fmod(ci.windFromRelDeg + 360.0, 360.0);
+            x["roll"] = ci.rollDeg; x["pitch"] = ci.pitchDeg;
+            x["gnssQ"] = ci.gnssQ; x["gnssSats"] = ci.gnssSats; x["gnssHdop"] = ci.gnssHdop; x["gstSigma"] = ci.gstSigma;
+            break;
+        }
+        for (const auto& sc : es.scatter) if (QString::fromStdString(sc.id) == x["id"].toString() || QString::fromStdString(sc.id) == id) { x["sdRep"] = sc.sdRep; break; }
         sn.push_back(x);
     }
     sen_ = sn;

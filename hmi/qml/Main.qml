@@ -103,7 +103,7 @@ ApplicationWindow {
     }
     // ------------------------------------------------ панели (одни и те же на главной вкладке, в своём рабочем месте и на вкладках)
     component CourseCard: Panel {
-        Layout.fillWidth: true; Layout.preferredHeight: win.hdgDr ? 176 : 142
+        Layout.fillWidth: true; Layout.preferredHeight: win.hdgDr ? 232 : 198
         ColumnLayout {
             anchors.fill: parent; anchors.margins: 14; spacing: 6
             RowLayout {
@@ -112,12 +112,39 @@ ApplicationWindow {
             }
             GridLayout {
                 columns: 3; columnSpacing: 18; rowSpacing: 0; Layout.fillWidth: true
-                Big { text: !s.hasShip ? "—" : s.hdgValid ? Theme.deg(s.hdg) : "НЕТ"; color: win.hdgCut ? Theme.alarm : win.hdgDr ? Theme.warn : Theme.text; Layout.preferredWidth: 190 }
-                Mid { text: win.active ? Theme.deg(s.opValid ? s.spHdg : s.refHdg) : "—"; color: Theme.accent; Layout.alignment: Qt.AlignBottom }
-                Mid { text: win.active && s.hdgValid ? Theme.num(s.errHdg, 1) + "°" : "—"; Layout.alignment: Qt.AlignBottom }
+                Big { text: !s.hasShip ? "—" : s.hdgValid ? Theme.hdg3(s.hdg) : "НЕТ"; color: win.hdgCut ? Theme.alarm : win.hdgDr ? Theme.warn : Theme.text; Layout.preferredWidth: 190 }
+                Mid { text: win.active ? Theme.hdg3(s.opValid ? s.spHdg : s.refHdg) : "—"; color: Theme.accent; Layout.alignment: Qt.AlignBottom }
+                Mid { text: win.active && s.hdgValid ? (s.errHdg > 0.05 ? "+" : "") + Theme.num(s.errHdg, 1) + "°" : "—"; Layout.alignment: Qt.AlignBottom }
                 Label { text: "факт"; color: Theme.dim; font.pixelSize: 12 }
                 Label { text: "задан"; color: Theme.dim; font.pixelSize: 12 }
-                Label { text: "ошибка · поворот " + Theme.num(s.rot, 1) + " °/мин"; color: Theme.dim; font.pixelSize: 12 }
+                Label { text: "ошибка"; color: Theme.dim; font.pixelSize: 12 }
+            }
+            // поворот: число со знаком и полоса −10…+10 °/мин, ноль посередине (ЛБ слева, ПрБ справа)
+            RowLayout {
+                Layout.fillWidth: true; spacing: 10
+                Label { text: "поворот"; color: Theme.dim; font.pixelSize: 12 }
+                Item {
+                    Layout.fillWidth: true; implicitHeight: 22
+                    Rectangle { id: rotBar; width: parent.width; height: 8; y: 2; radius: 2; color: Theme.plot; border.color: Theme.line }
+                    Rectangle {
+                        readonly property real p: Math.max(-1, Math.min(1, (s.rot || 0) / 10))
+                        y: rotBar.y + 1; height: rotBar.height - 2; radius: 1
+                        width: Math.abs(p) * rotBar.width / 2; x: p >= 0 ? rotBar.width / 2 : rotBar.width / 2 - width
+                        color: Math.abs(s.rot || 0) > 3 ? Theme.warn : Theme.accent
+                    }
+                    Rectangle { x: rotBar.width / 2 - 1; y: 0; width: 2; height: 12; color: Theme.dim }
+                    Label { y: 11; text: "◀ ЛБ 10"; color: Theme.dim; font.pixelSize: 10 }
+                    Label { y: 11; anchors.right: parent.right; text: "10 ПрБ ▶"; color: Theme.dim; font.pixelSize: 10 }
+                }
+                Label { text: (s.rot > 0.05 ? "+" : "") + Theme.num(s.rot, 1) + " °/мин"; color: Math.abs(s.rot || 0) > 3 ? Theme.warn : Theme.text; font.family: Theme.mono; font.pixelSize: 15 }
+            }
+            // скорость в узлах: над грунтом, вдоль и поперёк — со стороной
+            RowLayout {
+                Layout.fillWidth: true; spacing: 14
+                Label { text: "скорость"; color: Theme.dim; font.pixelSize: 12 }
+                Label { text: Theme.num(Theme.knots(Math.hypot(s.u || 0, s.v || 0)), 2) + " уз"; color: Theme.text; font.family: Theme.mono; font.pixelSize: 17 }
+                Label { text: "вдоль " + Theme.num(Math.abs(Theme.knots(s.u || 0)), 2) + " уз " + ((s.u || 0) >= 0 ? "вперёд" : "назад"); color: Theme.text; font.family: Theme.mono; font.pixelSize: 13 }
+                Label { text: "поперёк " + Theme.num(Math.abs(Theme.knots(s.v || 0)), 2) + " уз " + ((s.v || 0) >= 0 ? "к ПрБ" : "к ЛБ"); color: Theme.text; font.family: Theme.mono; font.pixelSize: 13; Layout.fillWidth: true; elide: Text.ElideRight }
             }
             ColumnLayout {
                 visible: win.hdgDr; Layout.fillWidth: true; spacing: 4
@@ -143,11 +170,11 @@ ApplicationWindow {
                 }
                 Label {
                     text: win.posCut ? "нет положения: счисление закончилось · без измерений " + win.mmss(s.refLostS) : win.posDr ? "по модели · измерений нет " + win.mmss(s.refLostS)
-                        : win.hdgCut && s.modeCode === 4 ? "вдоль и поперёк — нет курса" : win.active && s.modeCode === 4 ? "вдоль " + (s.opAlong >= 0 ? "+" : "") + Theme.num(s.opAlong, 1) + " м · поперёк " + (s.opCross >= 0 ? "+" : "") + Theme.num(s.opCross, 1) + " м" : "режим «Позиция» не включён"
+                        : win.hdgCut && s.modeCode === 4 ? "вдоль и поперёк — нет курса" : win.active && s.modeCode === 4 ? "судно " + Theme.num(Math.abs(s.opAlong), 1) + " м " + (s.opAlong >= 0 ? "к носу" : "к корме") + " · " + Theme.num(Math.abs(s.opCross), 1) + " м " + (s.opCross >= 0 ? "к ПрБ" : "к ЛБ") + " от точки" : "режим «Позиция» не включён"
                     color: win.posCut ? Theme.alarm : win.posDr ? Theme.warn : Theme.text; font.pixelSize: 14
                 }
                 Label {
-                    text: win.posCut ? "Положение неизвестно — систем положения нет" : win.posDr ? "Вероятный уход до " + win.driftTxt(s.drDriftM) + " м — точное положение неизвестно" : s.posDR === true ? "Счисление — нет измерений " + win.mmss(s.refLostS) : "Источник: " + (s.posSource || "—")
+                    text: win.posCut ? "Положение неизвестно — систем положения нет" : win.posDr ? "Вероятный уход до " + win.driftTxt(s.drDriftM) + " м — точное положение неизвестно" : s.posDR === true ? "Счисление — нет измерений " + win.mmss(s.refLostS) : (s.geoValid ? Theme.latlon(s.lat, true) + "  " + Theme.latlon(s.lon, false) + " · " : "") + "Источник: " + (s.posSource || "—")
                     color: win.posCut ? Theme.alarm : win.posDr || s.posDR === true ? Theme.warn : Theme.dim; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true
                 }
             }
@@ -169,7 +196,17 @@ ApplicationWindow {
                         g.strokeStyle = Theme.warn; g.fillStyle = Theme.tint(Theme.warn, 0.12); g.lineWidth = 1.5
                         g.beginPath(); g.arc(c, c, Math.min(r, s.drDriftM * k), 0, 2 * Math.PI); g.fill(); g.stroke()
                     }
-                    const x = Math.max(-r, Math.min(r, s.opCross * k)), y = Math.max(-r, Math.min(r, s.opAlong * k))
+                    const d = Math.hypot(s.opCross, s.opAlong)
+                    if (d > 10) {     // за шкалой: стрелка на краю по направлению, а не точка, упёртая в край
+                        const ux = s.opCross / d, uy = s.opAlong / d, ex = c + ux * (r - 2), ey = c - uy * (r - 2), bx = c + ux * (r - 22), by = c - uy * (r - 22)
+                        g.strokeStyle = Theme.warn; g.fillStyle = Theme.warn; g.lineWidth = 3
+                        g.beginPath(); g.moveTo(bx, by); g.lineTo(ex, ey); g.stroke()
+                        const a = Math.atan2(ey - by, ex - bx)
+                        g.beginPath(); g.moveTo(ex, ey); g.lineTo(ex - 10 * Math.cos(a - 0.45), ey - 10 * Math.sin(a - 0.45)); g.lineTo(ex - 10 * Math.cos(a + 0.45), ey - 10 * Math.sin(a + 0.45)); g.closePath(); g.fill()
+                        g.font = "bold 11px '" + Theme.font + "'"; g.textAlign = "center"; g.fillText("за шкалой", c, c + r * 0.55)
+                        return
+                    }
+                    const x = s.opCross * k, y = s.opAlong * k
                     g.fillStyle = win.posDr ? Theme.warn : Theme.vessel; g.beginPath(); g.arc(c + x, c - y, 6, 0, 2 * Math.PI); g.fill()
                 }
                 Connections { target: core; function onChanged() { eye.requestPaint() } }
@@ -298,9 +335,28 @@ ApplicationWindow {
                         readonly property color sc: !modelData.valid ? Theme.alarm : modelData.rejected ? Theme.warn : Theme.ok
                         Dot { c: sc }
                         Label { text: modelData.id; color: Theme.text; font.bold: true; Layout.preferredWidth: 62; font.pixelSize: 13 }
-                        Label { text: !modelData.valid ? "нет данных" : modelData.rejected ? "отбракована" + (modelData.state ? ": " + modelData.state : "") : modelData.kind
-                                color: modelData.valid && !modelData.rejected ? Theme.dim : sc; Layout.fillWidth: true; font.pixelSize: 13; elide: Text.ElideRight }
-                        Label { text: modelData.age >= 0 ? Theme.num(modelData.age, 1) + " с" : "—"; color: Theme.dim; font.pixelSize: 12; font.family: Theme.mono }
+                        // показание: курс и расхождение с решением, ветер в узлах, крен, качество GNSS; возраст — только при потере связи
+                        Label {
+                            readonly property var d: modelData
+                            readonly property bool hdgOff: d.kind === "курс" && Math.abs(d.dHdg || 0) > 1
+                            text: {
+                                if (!d.valid) return "нет данных"
+                                if (d.rejected) return "отбракована" + (d.state ? ": " + d.state : "")
+                                if (d.kind === "курс" && d.hdgDeg !== undefined) return Theme.hdg3(d.hdgDeg) + "  Δ " + (Math.abs(d.dHdg) < 0.05 ? "0,0" : (d.dHdg > 0 ? "+" : "") + Theme.num(d.dHdg, 1)) + "°"
+                                if (d.kind === "ветер" && d.windMs !== undefined) return Theme.bearing(d.windFromRel) + " от носа · " + Theme.num(Theme.knots(d.windMs), 1) + " уз"
+                                if (d.kind === "качка" && d.roll !== undefined) return "крен " + Theme.num(Math.abs(d.roll), 1) + "° " + (d.roll < 0 ? "ЛБ" : "ПрБ")
+                                if (d.kind === "положение") {
+                                    let t = ""
+                                    if (d.gnssQ !== undefined && d.gnssQ >= 0) t = (d.gnssQ === 2 ? "DGPS" : d.gnssQ === 4 ? "RTK" : d.gnssQ === 5 ? "RTK float" : "GPS") + (d.gnssSats >= 0 ? " · " + d.gnssSats + " сп." : "") + (d.gnssHdop >= 0 ? " · HDOP " + Theme.num(d.gnssHdop, 1) : "")
+                                    else if (d.sdRep > 0) t = "σ " + Theme.num(d.sdRep, 2) + " м"
+                                    return t || d.kind
+                                }
+                                return d.kind
+                            }
+                            color: !d.valid || d.rejected ? sc : hdgOff ? Theme.warn : Theme.text
+                            Layout.fillWidth: true; font.pixelSize: 13; font.family: Theme.mono; elide: Text.ElideRight
+                        }
+                        Label { text: modelData.age > 1 ? Theme.num(modelData.age, 1) + " с" : ""; color: modelData.valid ? Theme.dim : Theme.alarm; font.pixelSize: 12; font.family: Theme.mono }
                     }
                 }
             }
@@ -314,15 +370,19 @@ ApplicationWindow {
             anchors.fill: parent; anchors.margins: 12; columns: 2; rowSpacing: 6; columnSpacing: 10
             Caption { text: "Среда"; Layout.columnSpan: 2 }
             Label { text: "Ветер, откуда"; color: Theme.dim; font.pixelSize: 13 }
-            Label { text: s.windValid ? Theme.num(s.windSpeed, 1) + " м/с · " + Theme.num((s.windFromRel + s.hdg) % 360, 0) + "°" : "НЕТ"; color: s.windValid ? Theme.wind : Theme.warn; font.family: Theme.mono; font.pixelSize: 14; Layout.alignment: Qt.AlignRight }
+            Label { text: s.windValid ? Theme.bearing(s.windFromRel + s.hdg) + " · " + Theme.num(Theme.knots(s.windSpeed), 1) + " уз" : "НЕТ"; color: s.windValid ? Theme.wind : Theme.warn; font.family: Theme.mono; font.pixelSize: 14; Layout.alignment: Qt.AlignRight }
             Label { text: "Ветер от носа"; color: Theme.dim; font.pixelSize: 13 }
             Label { text: s.windValid ? Theme.num(s.windFromRel > 180 ? 360 - s.windFromRel : s.windFromRel, 0) + "° " + (s.windFromRel > 180 ? "лев." : "пр.") + " борта" : "—"; color: Theme.text; font.family: Theme.mono; font.pixelSize: 14; Layout.alignment: Qt.AlignRight }
             Label { text: "Возмущение, откуда"; color: Theme.dim; font.pixelSize: 13 }
-            Label { text: !s.hasShip ? "—" : Theme.num(Math.sqrt(s.distN * s.distN + s.distE * s.distE) / 1000, 0) + " кН · " + Theme.num((Math.atan2(s.distE, s.distN) * 180 / Math.PI + 540) % 360, 0) + "°"; color: Theme.dist; font.family: Theme.mono; font.pixelSize: 14; Layout.alignment: Qt.AlignRight }
+            Label { text: !s.hasShip ? "—" : Theme.bearing((Math.atan2(s.distE, s.distN) * 180 / Math.PI + 540) % 360) + " · " + Theme.num(Math.sqrt(s.distN * s.distN + s.distE * s.distE) / 1000, 0) + " кН"; color: Theme.dist; font.family: Theme.mono; font.pixelSize: 14; Layout.alignment: Qt.AlignRight }
             Label { text: "Волнение (по качке)"; color: Theme.dim; font.pixelSize: 13 }
             Label { text: s.waveHs >= 0 ? Theme.num(s.waveHs, 1) + " м" : "не оценено"; color: Theme.text; font.family: Theme.mono; font.pixelSize: 14; Layout.alignment: Qt.AlignRight }
             Label { text: "Крен / дифферент"; color: Theme.dim; font.pixelSize: 13 }
             Label { text: Theme.num(s.roll, 1) + "° / " + Theme.num(s.pitch, 1) + "°"; color: Theme.text; font.family: Theme.mono; font.pixelSize: 14; Layout.alignment: Qt.AlignRight }
+            Label {    // мощность — оценка по упору: всего и по группам отказа (ГРЩ); отдельной строкой, чтобы не теснить столбец чисел
+                Layout.columnSpan: 2; Layout.fillWidth: true; elide: Text.ElideRight; font.pixelSize: 13; color: Theme.dim
+                text: { let t = "Мощность ≈ " + Theme.num(s.powerKW, 0) + " кВт"; const b = s.busKW || {}; for (const k in b) t += " · " + k + " " + Theme.num(b[k], 0); return t }
+            }
             Item { Layout.fillHeight: true; Layout.columnSpan: 2 }
         }
     }
