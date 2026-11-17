@@ -85,20 +85,88 @@ ApplicationWindow {
 
             ColumnLayout {
                 Layout.fillHeight: true; Layout.fillWidth: false; Layout.preferredWidth: 500; Layout.maximumWidth: 500; spacing: 8
+                // Курс и скорость: курс трёхзначный, поворот с полосой ЛБ/ПрБ, скорость в узлах со стороной,
+                // отклонение от точки со стороной (где судно относительно точки).
                 Panel {
-                    Layout.fillWidth: true; Layout.preferredHeight: 236
-                    GridLayout {
-                        anchors.fill: parent; anchors.margins: 14; columns: 3; rowSpacing: 6; columnSpacing: 18
-                        Caption { text: "Курс" } Caption { text: "Задан" } Caption { text: "Ошибка" }
-                        Big { text: s.hdgValid ? Theme.deg(s.hdg) : "НЕТ"; color: s.hdgValid ? (s.hdgDR ? Theme.warn : Theme.text) : Theme.alarm }
-                        Big { text: Theme.deg(s.refHdg); color: Theme.accent }
-                        Big { text: Theme.num(s.errHdg, 1) + "°" }
-                        Caption { text: "Положение от точки" } Caption { text: "вдоль / поперёк" } Caption { text: "Поворот" }
-                        Big { text: s.posValid ? Theme.num(s.errDist, 2) + " м" : "НЕТ"; color: !s.posValid ? Theme.alarm : s.posDR ? Theme.warn : Theme.text }
-                        Label { text: Theme.num(s.errAlong, 1) + " / " + Theme.num(s.errCross, 1) + " м"; color: Theme.text; font.pixelSize: 20; font.family: Theme.mono }
-                        Label { text: Theme.num(s.rot, 1) + " °/мин"; color: Theme.text; font.pixelSize: 20; font.family: Theme.mono }
-                        Caption { text: "Источник положения"; Layout.columnSpan: 3 }
-                        Label { text: s.posDR ? "СЧИСЛЕНИЕ — нет измерений" : (s.posSource || "—"); color: s.posDR ? Theme.warn : Theme.text; Layout.columnSpan: 3; font.pixelSize: Theme.fs }
+                    id: hdgPanel
+                    Layout.fillWidth: true; Layout.preferredHeight: 262
+                    readonly property color hc: !s.hdgValid ? Theme.alarm : s.hdgDR ? Theme.warn : Theme.text
+                    readonly property real offAlong: -(s.errAlong || 0)     // судно от точки: + к носу
+                    readonly property real offCross: -(s.errCross || 0)     // + к правому борту
+                    function sgn(v, d) { return (v > 0.0001 ? "+" : "") + Theme.num(v, d) }
+                    ColumnLayout {
+                        anchors.fill: parent; anchors.margins: 14; spacing: 4
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Caption { text: "Курс и скорость"; Layout.fillWidth: true }
+                            Rectangle {
+                                radius: 2; implicitWidth: srcL.implicitWidth + 12; implicitHeight: srcL.implicitHeight + 4
+                                color: !s.hdgValid ? Theme.alarm : s.hdgDR ? Theme.warn : Qt.darker(Theme.ok, 1.6)
+                                Label { id: srcL; anchors.centerIn: parent; font.pixelSize: 12; font.bold: true
+                                        color: s.hdgValid && !s.hdgDR ? Theme.text : Theme.bg
+                                        text: !s.hdgValid ? "НЕТ ДАННЫХ" : s.hdgDR ? "ПО СЧИСЛЕНИЮ" : "по гирокомпасам" }
+                            }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: 16
+                            ColumnLayout {
+                                spacing: 0
+                                Label { text: s.hdgValid ? Theme.hdg3(s.hdg) : "НЕТ"; color: hdgPanel.hc; font.pixelSize: 44; font.family: Theme.mono }
+                                Label { text: "факт"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+                            }
+                            GridLayout {
+                                Layout.fillWidth: true; columns: 2; rowSpacing: 2; columnSpacing: 8
+                                Label { text: "задан"; color: Theme.dim; font.pixelSize: Theme.fsSmall; Layout.fillWidth: true }
+                                Label { text: Theme.hdg3(s.refHdg); color: Theme.accent; font.pixelSize: 20; font.family: Theme.mono; Layout.alignment: Qt.AlignRight }
+                                Label { text: "ошибка"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+                                Label { text: s.hdgValid ? hdgPanel.sgn(s.errHdg, 1) + "°" : "—"; color: Theme.text; font.pixelSize: 20; font.family: Theme.mono; Layout.alignment: Qt.AlignRight }
+                                Label { text: "поворот"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+                                Label { text: hdgPanel.sgn(s.rot, 1) + " °/мин"; color: Math.abs(s.rot || 0) > 3 ? Theme.warn : Theme.text
+                                        font.pixelSize: 17; font.family: Theme.mono; Layout.alignment: Qt.AlignRight }
+                            }
+                        }
+                        // полоса поворота: −10…+10 °/мин, ноль посередине; + — вправо
+                        Item {
+                            Layout.fillWidth: true; Layout.preferredHeight: 22
+                            Rectangle { id: rotBar; width: parent.width; height: 8; y: 2; radius: 2; color: Theme.bg; border.color: Theme.line }
+                            Rectangle {
+                                readonly property real p: Math.max(-1, Math.min(1, (s.rot || 0) / 10))
+                                y: rotBar.y + 1; height: rotBar.height - 2; radius: 1
+                                width: Math.abs(p) * rotBar.width / 2
+                                x: p >= 0 ? rotBar.width / 2 : rotBar.width / 2 - width
+                                color: Math.abs(s.rot || 0) > 3 ? Theme.warn : Theme.accent
+                            }
+                            Rectangle { x: rotBar.width / 2 - 1; y: 0; width: 2; height: 12; color: Theme.dim }
+                            Label { y: 11; text: "◀ ЛБ 10 °/мин"; color: Theme.dim; font.pixelSize: 10 }
+                            Label { y: 11; anchors.right: parent.right; text: "10 °/мин ПрБ ▶"; color: Theme.dim; font.pixelSize: 10 }
+                        }
+                        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+                        GridLayout {
+                            Layout.fillWidth: true; columns: 3; rowSpacing: 0; columnSpacing: 14
+                            Label { text: "над грунтом"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+                            Label { text: "вдоль"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+                            Label { text: "поперёк"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+                            Label { text: Theme.num(Theme.knots(Math.hypot(s.u || 0, s.v || 0)), 2) + " уз"; color: Theme.text; font.pixelSize: 20; font.family: Theme.mono }
+                            Label { text: Theme.num(Math.abs(Theme.knots(s.u || 0)), 2) + " уз " + ((s.u || 0) >= 0 ? "вперёд" : "назад"); color: Theme.text; font.pixelSize: Theme.fs; font.family: Theme.mono }
+                            Label { text: Theme.num(Math.abs(Theme.knots(s.v || 0)), 2) + " уз " + ((s.v || 0) >= 0 ? "к ПрБ" : "к ЛБ"); color: Theme.text; font.pixelSize: Theme.fs; font.family: Theme.mono }
+                        }
+                        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: 12
+                            ColumnLayout {
+                                spacing: 0
+                                Label { text: "от точки"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+                                Label { text: s.posValid ? Theme.num(s.errDist, 1) + " м" : "НЕТ"; font.pixelSize: 22; font.family: Theme.mono
+                                        color: !s.posValid ? Theme.alarm : s.posDR ? Theme.warn : Theme.text }
+                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true; spacing: 0
+                                Label { text: "судно " + Theme.num(Math.abs(hdgPanel.offAlong), 1) + " м " + (hdgPanel.offAlong >= 0 ? "к носу" : "к корме") + " · " + Theme.num(Math.abs(hdgPanel.offCross), 1) + " м " + (hdgPanel.offCross >= 0 ? "к ПрБ" : "к ЛБ")
+                                        color: Theme.text; font.pixelSize: Theme.fsSmall; elide: Text.ElideRight; Layout.fillWidth: true }
+                                Label { text: s.posDR ? "СЧИСЛЕНИЕ — нет измерений" : "источник: " + (s.posSource || "—")
+                                        color: s.posDR ? Theme.warn : Theme.dim; font.pixelSize: Theme.fsSmall; elide: Text.ElideRight; Layout.fillWidth: true }
+                            }
+                        }
                     }
                 }
                 Panel {
@@ -179,7 +247,35 @@ ApplicationWindow {
                     }
                 }
                 Panel {
-                    Layout.fillWidth: true; Layout.preferredHeight: 250
+                    Layout.fillWidth: true; Layout.preferredHeight: 190
+                    ColumnLayout {
+                        anchors.fill: parent; anchors.margins: 10; spacing: 4
+                        Caption { text: "Анализ последствий отказа" }
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: 6
+                            Btn { text: "Класс 2"; implicitHeight: 28; Layout.fillWidth: true; highlighted: s.caClass === 2; enabled: s.hasShip === true; onClicked: core.command("class 2") }
+                            Btn { text: "Класс 3"; implicitHeight: 28; Layout.fillWidth: true; highlighted: s.caClass === 3; enabled: s.hasShip === true; onClicked: core.command("class 3") }
+                            Btn { text: "Выкл"; implicitHeight: 28; Layout.fillWidth: true; highlighted: s.caClass === 0; enabled: s.hasShip === true; onClicked: core.command("class off") }
+                        }
+                        Label { Layout.fillWidth: true; wrapMode: Text.Wrap; font.pixelSize: Theme.fsSmall
+                                color: s.caClass === 0 ? Theme.dim : s.caAlarm ? Theme.alarm : s.caRan ? Theme.ok : Theme.dim
+                                text: s.caClass === 0 ? "Выключен. Для DYNPOS-2/3 включите класс (РС ч. XV 8.9.5)."
+                                    : !s.caRan ? "Класс " + s.caClass + ": расчёт через 60 с в режиме «Позиция» при неизменных точке и курсе."
+                                    : (s.caAlarm ? "НЕ ХВАТИТ упора при наихудшем отказе" : "Запас есть при всех отказах") + " (" + Theme.num(s.caAge, 0) + " с назад). Сила / момент, которые наберутся:"
+                                      + (s.caSingle ? " · группы не заданы — одиночные отказы" : "") }
+                        Repeater {
+                            model: s.caGroups
+                            delegate: RowLayout {
+                                Layout.fillWidth: true; spacing: 8
+                                Rectangle { implicitWidth: 10; implicitHeight: 10; radius: 5; color: modelData.alarm ? Theme.alarm : modelData.holds ? Theme.ok : Theme.warn }
+                                Label { text: "отказ " + modelData.name + " (" + modelData.ids + ")"; color: Theme.text; Layout.fillWidth: true; font.pixelSize: Theme.fsSmall; elide: Text.ElideRight }
+                                Label { text: Theme.num(modelData.force, 0) + " / " + Theme.num(modelData.moment, 0) + " %"; color: modelData.holds ? Theme.text : Theme.alarm; font.pixelSize: Theme.fsSmall; font.family: Theme.mono }
+                            }
+                        }
+                    }
+                }
+                Panel {
+                    Layout.fillWidth: true; Layout.preferredHeight: 190
                     ColumnLayout {
                         anchors.fill: parent; anchors.margins: 10; spacing: 4
                         Caption { text: "Датчики" }
