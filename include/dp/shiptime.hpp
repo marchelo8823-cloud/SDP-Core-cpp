@@ -1,6 +1,7 @@
 // Судовое время (решение владельца 17.11.2026). Внутри — всегда UTC; на экране — судовое время = UTC + пояс судна.
 // Источник UTC: GNSS (ZDA, RMC) по умолчанию; часы компьютера — запасной, если времени GNSS нет (или по выбору оператора).
-// Сверка: время GNSS сравнивается с часами компьютера (TIME_PC_DIFF) и само с собой (скачок — TIME_JUMP: сбой или подмена сигнала).
+// Сверка: время GNSS сравнивается с часами компьютера (TIME_PC_DIFF), само с собой (скачок, замёрзшее время, увод — TIME_JUMP)
+// и приёмники между собой (TIME_RX_DIFF). Показ — от одного основного приёмника, другой берётся, только если основной замолчал.
 // Пояс: при первом известном положении — по долготе (морской пояс, 15° на час); дальше при переходе в другой пояс — только
 // предупреждение TIME_ZONE, переводит оператор (zone accept), как на судне — по распоряжению. До положения — пояс компьютера.
 // В имитации — часы компьютера (время имитатора ускоряется и показывается отдельно).
@@ -90,12 +91,19 @@ public:
     void feedGnss(double utc, double at, const std::string& ch = "") {
         if (!std::isfinite(utc) || !std::isfinite(at)) return;
         Rx& r = rx_[ch]; const double off = utc - at;
-        if (!r.has || at - r.at > 30.0) { r.ref = off; r.bad = 0; }
+        if (!r.has) { r.ref = off; r.bad = 0; }
+        else if (at - r.at > 30.0) {   // после перерыва пачки быть не может — одного приёма вне допуска достаточно
+            if (std::fabs(off - r.ref) > jumpS) { jumpUntil_ = at + jumpHoldS; jumpBy_ = off - r.ref; jumpCh_ = ch; }
+            r.ref = off; r.bad = 0;
+        }
         else if (std::fabs(off - r.ref) > jumpS) {
             if (++r.bad >= 2) { jumpUntil_ = at + jumpHoldS; jumpBy_ = off - r.ref; jumpCh_ = ch; r.ref = off; r.bad = 0; }
         } else { r.ref += 0.05 * (off - r.ref); r.bad = 0; }   // медленно следует за дрожанием приёма
-        r.at = at; r.has = true;
-        if (!hasG_ || at >= gAt_) { gUtc_ = utc; gAt_ = at; hasG_ = true; }
+        r.at = at; r.utc = utc; r.has = true;
+        // показ — от одного (основного) приёмника: первый, от которого пришло время; другой — только если основной замолчал
+        auto it = rx_.find(primary_);
+        if (it == rx_.end() || at - it->second.at > gnssFreshS) primary_ = ch;
+        const Rx& p = rx_[primary_]; gUtc_ = p.utc; gAt_ = p.at; hasG_ = true;
     }
 
     // now — те же часы, что в feedGnss; pcUtc — часы компьютера (UTC); lonValid/lonDeg — долгота судна; sim — работает имитатор.
@@ -114,8 +122,21 @@ public:
             }
         } else pcDiff_ = 0;
         if (!sim && now < jumpUntil_) {
-            char b[256]; std::snprintf(b, sizeof b, "Скачок времени GNSS%s%s на %.0f с — сбой приёмника или подмена сигнала; проверьте приёмник", jumpCh_.empty() ? "" : " ", jumpCh_.c_str(), jumpBy_);
+            char b[256]; std::snprintf(b, sizeof b, "Скачок или задержка времени GNSS%s%s на %.0f с — сбой приёмника, задержка передачи или подмена сигнала; проверьте приёмник", jumpCh_.empty() ? "" : " ", jumpCh_.c_str(), jumpBy_);
             out.push_back({"TIME_JUMP", b, 2});
+        }
+        // приёмники между собой: расхождение больше maxDiffS — одно предупреждение, показ остаётся от основного
+        if (!sim && fresh) {
+            const double pu = gUtc_ + (now - gAt_); double worst = 0; std::string who;
+            for (const auto& kv : rx_) {
+                if (kv.first == primary_ || !kv.second.has || now - kv.second.at > gnssFreshS) continue;
+                const double d = kv.second.utc + (now - kv.second.at) - pu;
+                if (std::fabs(d) > std::fabs(worst)) { worst = d; who = kv.first; }
+            }
+            if (std::fabs(worst) > maxDiffS) {
+                char b[256]; std::snprintf(b, sizeof b, "Время приёмников GNSS расходится: %s на %.0f с от %s — судовое время по %s", who.c_str(), worst, primary_.c_str(), primary_.c_str());
+                out.push_back({"TIME_RX_DIFF", b, 2});
+            }
         }
         // пояс по долготе
         if (lonValid && std::isfinite(lonDeg)) {
@@ -165,8 +186,8 @@ private:
     Source src_ = Gnss;
     bool sim_ = false, hasG_ = false, usingGnss_ = false, zoneSet_ = false, sugValid_ = false, fallbackSaid_ = false;
     double gUtc_ = 0, gAt_ = -1e9, utc_ = 0, now_ = 0, pcDiff_ = 0, jumpUntil_ = -1e9, jumpBy_ = 0;
-    struct Rx { bool has = false; double at = -1e9, ref = 0; int bad = 0; };
-    std::map<std::string, Rx> rx_; std::string jumpCh_;
+    struct Rx { bool has = false; double at = -1e9, utc = 0, ref = 0; int bad = 0; };
+    std::map<std::string, Rx> rx_; std::string jumpCh_, primary_;
     int zone_ = pcZoneMin(), sug_ = 0, ackSug_ = 0;
 
     int suggestFrom(double lon) const {   // морской пояс: целые часы по 15° долготы, с гистерезисом у границы

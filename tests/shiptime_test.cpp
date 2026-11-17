@@ -47,6 +47,16 @@ int main(int argc, char** argv) {
         ShipTime a;   // два приёмника, время различается на 3 с, — не скачок
         for (int i = 0; i < 10; ++i) { a.feedGnss(u + i, i, "G1"); a.feedGnss(u + i + 3.0, i + 0.5, "G2"); m.clear(); a.update(i + 0.6, u + i + 0.6, false, 0, false, m, inf); j = j || has(m, "TIME_JUMP"); }
         CHECK(!j, "два приёмника с разным временем — TIME_JUMP нет");
+        ShipTime a2; int flipsPc = 0, back = 0; bool wasPc = false, rxd = false; double prev = 0;
+        for (int i = 0; i < 40; ++i) {
+            const double t0 = i * 0.5; if (i % 2 == 0) a2.feedGnss(u + t0, t0, "G1"); else a2.feedGnss(u + t0 + 3.0, t0, "G2");
+            m.clear(); a2.update(t0 + 0.1, u + t0 + 0.1, false, 0, false, m, inf);
+            const bool pc = has(m, "TIME_PC_DIFF"); if (i > 0 && pc != wasPc) ++flipsPc; wasPc = pc; rxd = rxd || has(m, "TIME_RX_DIFF");
+            if (i > 0 && a2.utc() < prev) ++back; prev = a2.utc();
+        }
+        CHECK(flipsPc == 0 && back == 0 && rxd, "два приёмника на 3 с врозь: показ по основному без скачков, одно TIME_RX_DIFF");
+        ShipTime g; for (int i = 0; i < 5; ++i) g.feedGnss(u + i, i, "G"); g.feedGnss(u + 40 + 3600, 40, "G"); m.clear(); g.update(40.1, u + 40.1, false, 0, false, m, inf);
+        CHECK(has(m, "TIME_JUMP"), "перерыв больше 30 с и возврат со скачком на 1 ч — TIME_JUMP");
         ShipTime b; j = false;   // пачка строк из буфера: 4 строки за 1 с с задержкой до 1,5 с, дальше ровно
         for (int i = 0; i < 5; ++i) b.feedGnss(u + i, i, "G");
         for (int k2 = 1; k2 <= 4; ++k2) { b.feedGnss(u + 4 + k2 * 0.5, 6.0 + 0.25 * k2, "G"); m.clear(); b.update(6.0 + 0.25 * k2, u + 6, false, 0, false, m, inf); j = j || has(m, "TIME_JUMP"); }
