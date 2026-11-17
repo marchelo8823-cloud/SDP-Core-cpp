@@ -69,25 +69,27 @@ ApplicationWindow {
     readonly property bool hdgDr: active && s.hdgDR === true && !hdgCut
     readonly property bool posCut: active && s.modeCode === 4 && s.posValid === false        // POS_LOST: счисление превысило допустимое время, упор снят
     readonly property bool posDr: active && s.modeCode === 4 && s.posDR === true && s.posValid !== false
+    readonly property bool alarmA: { for (let i = 0; i < core.alarms.length; ++i) if (core.alarms[i].level <= 1) return true; return false }
+    function okc() { return alarmA ? Theme.warn : Theme.ok }   // удержание идёт, но есть тревога E/A — не зелёный
     readonly property var st: {
         if (!s.hasShip) return { label: "НЕТ СУДНА", sub: "Загрузите книгу данных судна", c: Theme.dim }
         if (s.stateCode === 1) return { label: "ЖДУ ДАТЧИКИ", sub: "Нужны курс и положение от датчиков", c: Theme.dim }
         if (s.stateCode === 2) return { label: "ОЖИДАНИЕ", sub: "Движители автоматикой не управляются", c: Theme.accent }
-        if (hdgCut) return { label: "УПОР СНЯТ — НЕТ КУРСА", sub: "Гирокомпасов нет " + Theme.num(s.hdgLostS, 0) + " с · автоматика не держит судно", c: Theme.alarm }
+        if (hdgCut) return { label: "УПОР СНЯТ — НЕТ КУРСА", sub: "Гирокомпасов нет " + Theme.num(s.hdgLostS + s.hdgTimeoutS, 0) + " с · автоматика не держит судно", c: Theme.alarm }
         if (posCut) return { label: "УПОР СНЯТ — НЕТ ПОЛОЖЕНИЯ", sub: "Нет систем положения " + mmss(s.refLostS) + " · счисление закончилось, автоматика не держит судно", c: Theme.alarm }
         if (hdgDr) return { label: "СЧИСЛЕНИЕ КУРСА", sub: "Нет гирокомпасов · упор будет снят через " + Theme.num(Math.max(0, s.hdgDrS - s.hdgLostS), 1) + " с", c: Theme.warn }
         if (posDr) return { label: "СЧИСЛЕНИЕ ПОЛОЖЕНИЯ", sub: "Нет систем положения " + mmss(s.refLostS) + " · вероятный уход до " + driftTxt(s.drDriftM) + " м", c: Theme.warn }
         if (s.returning) return { label: "ВОЗВРАТ В ТОЧКУ", sub: "До точки " + Theme.num(s.opErr, 1) + " м · «Держать здесь» — остаться", c: Theme.accent }
-        if (s.modeCode === 3) return { label: "УДЕРЖАНИЕ КУРСА", sub: "Курс " + Theme.deg(s.opValid ? s.spHdg : s.refHdg) + " · загрузка " + Theme.num(s.load * 100, 0) + " %", c: Theme.ok }
-        return { label: "УДЕРЖАНИЕ ПОЗИЦИИ", sub: "Отклонение " + Theme.num(s.opErr, 1) + " м · курс " + Theme.deg(s.hdg) + " · загрузка " + Theme.num(s.load * 100, 0) + " %", c: Theme.ok }
+        if (s.modeCode === 3) return { label: "УДЕРЖАНИЕ КУРСА", sub: (alarmA ? "⚠ Есть тревога · " : "") + "Курс " + Theme.deg(s.opValid ? s.spHdg : s.refHdg) + " · загрузка " + Theme.num(s.load * 100, 0) + " %", c: okc() }
+        return { label: "УДЕРЖАНИЕ ПОЗИЦИИ", sub: (alarmA ? "⚠ Есть тревога · " : "") + "Отклонение " + Theme.num(s.opErr, 1) + " м · курс " + Theme.deg(s.hdg) + " · загрузка " + Theme.num(s.load * 100, 0) + " %", c: okc() }
     }
     readonly property var advice: {
         if (hdgCut) return { c: Theme.alarm, steps: [
-            "Возьмите управление: джойстик или посты управления движителями.",
+            "Возьмите управление с постов управления движителями.",
             "Проверьте гирокомпасы: питание, связь.",
             "⚠ Когда курс вернётся, удержание продолжится само — будьте готовы." ] }
         if (posCut) return { c: Theme.alarm, steps: [
-            "Возьмите управление: джойстик или посты управления движителями.",
+            "Возьмите управление с постов управления движителями.",
             "Проверьте системы положения: питание, связь, поправки.",
             "⚠ Когда положение вернётся, судно плавно пойдёт в точку; остаться на месте — «Держать здесь»." ] }
         if (hdgDr) return { c: Theme.warn, steps: [
@@ -141,12 +143,12 @@ ApplicationWindow {
                 }
                 Label {
                     text: win.posCut ? "нет положения: счисление закончилось · без измерений " + win.mmss(s.refLostS) : win.posDr ? "по модели · измерений нет " + win.mmss(s.refLostS)
-                        : win.active && s.modeCode === 4 ? "вдоль " + (s.opAlong >= 0 ? "+" : "") + Theme.num(s.opAlong, 1) + " м · поперёк " + (s.opCross >= 0 ? "+" : "") + Theme.num(s.opCross, 1) + " м" : "режим «Позиция» не включён"
+                        : win.hdgCut && s.modeCode === 4 ? "вдоль и поперёк — нет курса" : win.active && s.modeCode === 4 ? "вдоль " + (s.opAlong >= 0 ? "+" : "") + Theme.num(s.opAlong, 1) + " м · поперёк " + (s.opCross >= 0 ? "+" : "") + Theme.num(s.opCross, 1) + " м" : "режим «Позиция» не включён"
                     color: win.posCut ? Theme.alarm : win.posDr ? Theme.warn : Theme.text; font.pixelSize: 14
                 }
                 Label {
-                    text: win.posCut ? "Положение неизвестно — систем положения нет" : win.posDr ? "Вероятный уход до " + win.driftTxt(s.drDriftM) + " м — точное положение неизвестно" : "Источник: " + (s.posSource || "—")
-                    color: win.posCut ? Theme.alarm : win.posDr ? Theme.warn : Theme.dim; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true
+                    text: win.posCut ? "Положение неизвестно — систем положения нет" : win.posDr ? "Вероятный уход до " + win.driftTxt(s.drDriftM) + " м — точное положение неизвестно" : s.posDR === true ? "Счисление — нет измерений " + win.mmss(s.refLostS) : "Источник: " + (s.posSource || "—")
+                    color: win.posCut ? Theme.alarm : win.posDr || s.posDR === true ? Theme.warn : Theme.dim; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true
                 }
             }
             // мишень: отклонение в осях судна (нос вверх), масштаб — 10 м до края
@@ -162,7 +164,7 @@ ApplicationWindow {
                     g.beginPath(); g.arc(c, c, 5 * k, 0, 2 * Math.PI); g.stroke()
                     g.beginPath(); g.moveTo(c, c - r); g.lineTo(c, c + r); g.moveTo(c - r, c); g.lineTo(c + r, c); g.stroke()
                     g.fillStyle = Theme.dim; g.font = "10px '" + Theme.font + "'"; g.textAlign = "center"; g.fillText("нос", c, 14); g.fillText("5 м", c + 5 * k * 0.72 + 8, c - 5 * k * 0.72)
-                    if (!win.active || s.modeCode !== 4 || win.posCut) return   // нет положения — точку не рисуем
+                    if (!win.active || s.modeCode !== 4 || win.posCut || win.hdgCut) return   // нет положения или курса — точку в осях судна не рисуем
                     if (win.posDr && s.drDriftM > 0.2) {
                         g.strokeStyle = Theme.warn; g.fillStyle = Theme.tint(Theme.warn, 0.12); g.lineWidth = 1.5
                         g.beginPath(); g.arc(c, c, Math.min(r, s.drDriftM * k), 0, 2 * Math.PI); g.fill(); g.stroke()
@@ -192,7 +194,7 @@ ApplicationWindow {
             RowLayout {
                 spacing: 8
                 Label {
-                    Layout.fillWidth: true; color: Theme.text; font.pixelSize: 14; elide: Text.ElideRight
+                    Layout.fillWidth: true; color: Theme.text; font.pixelSize: 14; wrapMode: Text.WordWrap
                     text: { let n = 0, f = 0; for (let i = 0; i < core.thrusters.length; ++i) { if (core.thrusters[i].taken && !core.thrusters[i].fbLost) ++n; if (core.thrusters[i].fbLost) ++f }
                             return "Движители: " + n + " из " + core.thrusters.length + " в управлении" + (f > 0 ? ", без обратной связи: " + f : "") + (win.hdgCut || win.posCut ? ", команды 0 %" : "") }
                 }
@@ -556,6 +558,15 @@ ApplicationWindow {
                             Label { text: modelData.text; color: Theme.text; font.pixelSize: 14; elide: Text.ElideRight; Layout.fillWidth: true }
                         }
                     }
+                    Label {   // остальные тревоги не прячутся: сколько ещё и сколько не квитировано, щелчок — вкладка тревог
+                        readonly property int more: core.alarms.length - 2
+                        readonly property int unacked: { let u = 0; for (let i = 2; i < core.alarms.length; ++i) if (!core.alarms[i].acked) ++u; return u }
+                        readonly property int worst: core.alarms.length > 2 ? core.alarms[2].level : 3
+                        visible: more > 0
+                        text: "ещё " + more + (unacked > 0 ? ", из них не квитировано " + unacked : "") + " — «Тревоги и журнал»"
+                        color: unacked > 0 ? Theme.levelColor(worst) : Theme.dim; font.pixelSize: 13; font.bold: unacked > 0
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.tabIndex = 5 }
+                    }
                     Item { Layout.fillHeight: true }
                 }
                 Timer { id: blinkAl; interval: 500; repeat: true; running: true; property bool on: true; onTriggered: on = !on }
@@ -732,7 +743,7 @@ ApplicationWindow {
                                     RowLayout { Layout.preferredWidth: 170; spacing: 8
                                         Dot { c: sc }
                                         Label { text: !modelData.valid ? "нет данных" : modelData.rejected ? "отбракована" : "в работе"; color: sc; font.pixelSize: 14 } }
-                                    Label { text: modelData.state && modelData.state !== "OK" ? modelData.state : "норма"; color: Theme.dim; font.pixelSize: 14; Layout.fillWidth: true; elide: Text.ElideRight }
+                                    Label { text: !modelData.valid ? "нет данных" : modelData.state && modelData.state !== "OK" ? modelData.state : "норма"; color: !modelData.valid ? Theme.alarm : Theme.dim; font.pixelSize: 14; Layout.fillWidth: true; elide: Text.ElideRight }
                                     Label { text: modelData.age >= 0 ? Theme.num(modelData.age, 1) : "—"; color: Theme.dim; font.family: Theme.mono; font.pixelSize: 14; Layout.preferredWidth: 90; horizontalAlignment: Text.AlignRight }
                                 }
                             }

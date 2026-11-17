@@ -11,7 +11,7 @@ QtObject {
     readonly property color text: "#e8eef4"
     readonly property color dim: "#93a4b5"
     readonly property color accent: "#5aa9ff"      // заданное: точка, курс, команды
-    readonly property color vessel: "#5aa9ff"
+    readonly property color vessel: "#e8eef4"      // судно — светлое, заданная точка — синяя
     readonly property color ok: "#3dbe84"
     readonly property color warn: "#f5b841"
     readonly property color alarm: "#ff6259"
