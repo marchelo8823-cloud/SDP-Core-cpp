@@ -56,8 +56,8 @@ void HmiCore::runFor(double seconds) {
     refresh();
 }
 
-QString HmiCore::setting(const QString& key) const { return QSettings("SDP", "sdp_hmi").value(key).toString(); }
-void HmiCore::setSetting(const QString& key, const QString& value) { QSettings q("SDP", "sdp_hmi"); q.setValue(key, value); }
+QString HmiCore::setting(const QString& key) const { return ephemeral_ ? mem_.value(key) : QSettings("SDP", "sdp_hmi").value(key).toString(); }
+void HmiCore::setSetting(const QString& key, const QString& value) { if (ephemeral_) { mem_[key] = value; return; } QSettings q("SDP", "sdp_hmi"); q.setValue(key, value); }
 void HmiCore::note(const QString& text) { say(text.toStdString()); }
 
 void HmiCore::sample(double load) {

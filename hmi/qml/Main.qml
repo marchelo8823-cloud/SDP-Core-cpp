@@ -448,9 +448,10 @@ ApplicationWindow {
                 for (let i = 0; i < 3; ++i) if (!w.sets[i] || typeof w.sets[i].name !== "string" || !Array.isArray(w.sets[i].cells) || w.sets[i].cells.length !== 5) return false
                 return true
             }
-            if (o && o.list && typeof o.cur === "string" && okSet(o.list[o.cur])) {
-                for (const k in o.list) if (!okSet(o.list[k])) delete o.list[k]
+            if (o && o.list && typeof o.list === "object") {
+                for (const k in o.list) if (!okSet(o.list[k])) delete o.list[k]   // повреждённые наборы — прочь, исправные остаются
                 if (!o.list["Общий"]) o.list["Общий"] = wsDefault()
+                if (typeof o.cur !== "string" || !o.list[o.cur]) o.cur = "Общий"
                 return o
             }
         } catch (e) {}
@@ -462,6 +463,7 @@ ApplicationWindow {
     readonly property var opNames: Object.keys(ops.list).sort(function (a, b) { return a === "Общий" ? -1 : b === "Общий" ? 1 : a.localeCompare(b) })
     readonly property var ws: ops.list[ops.cur] || wsDefault()
     function saveOps(o) { ops = o; core.setSetting("operators", JSON.stringify(o)) }
+    function wsPick(i) { const w = JSON.parse(JSON.stringify(ws)); w.cur = i; saveWs(w) }   // для проверки без экрана (--ws-set)
     function saveWs(w) { const o = JSON.parse(JSON.stringify(ops)); o.list[o.cur] = w; saveOps(o) }
     function setOperator(name) {
         if (!ops.list[name] || name === ops.cur) return
@@ -655,7 +657,7 @@ ApplicationWindow {
                         anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 10; spacing: 10
                         Label { text: win.wsEdit ? "НАСТРОЙКА РАБОЧЕГО МЕСТА" : "РАБОЧЕЕ МЕСТО"; color: win.wsEdit ? Theme.accent : Theme.dim; font.bold: true; font.pixelSize: 14 }
                         Label { text: win.wsEdit ? "Настройка экрана не меняет ни режим, ни команды движителям." : "Заступающий на вахту выбирает себя в списке. Шапка и тревоги видны всегда; режим — на вкладке «Главный»."
-                                color: Theme.text; font.pixelSize: 14; Layout.fillWidth: true; elide: Text.ElideRight }
+                                color: Theme.text; font.pixelSize: 14; Layout.fillWidth: true; wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight }
                         Label { text: "Оператор"; color: Theme.dim; font.pixelSize: 14 }
                         ComboBox {
                             id: opSel; implicitWidth: 220; implicitHeight: 38; font.pixelSize: 14
@@ -666,7 +668,12 @@ ApplicationWindow {
                         TextField { id: opName; visible: win.wsEdit; implicitWidth: 180; implicitHeight: 38; font.pixelSize: 14; placeholderText: "фамилия оператора"
                                     onAccepted: if (win.addOperator(text)) text = "" }
                         Btn { text: "Добавить"; visible: win.wsEdit; implicitHeight: 38; enabled: opName.text.trim() !== ""; onClicked: if (win.addOperator(opName.text)) opName.text = "" }
-                        Btn { text: "Удалить «" + win.ops.cur + "»"; visible: win.wsEdit && win.ops.cur !== "Общий"; implicitHeight: 38; onClicked: win.removeOperator(win.ops.cur) }
+                        Btn {   // удаление — двумя нажатиями, как команды ядру
+                            property bool armed: false
+                            text: armed ? "Ещё раз: удалить «" + win.ops.cur + "»" : "Удалить «" + win.ops.cur + "»"; visible: win.wsEdit && win.ops.cur !== "Общий"; implicitHeight: 38
+                            onClicked: { if (armed) { armed = false; win.removeOperator(win.ops.cur) } else { armed = true; delT.restart() } }
+                            Timer { id: delT; interval: 4000; onTriggered: parent.armed = false }
+                        }
                         Label { text: "Набор"; color: Theme.dim; font.pixelSize: 14 }
                         ComboBox {
                             id: wsSet; implicitWidth: 250; implicitHeight: 38; font.pixelSize: 14
@@ -690,9 +697,10 @@ ApplicationWindow {
                             Layout.rowSpan: index === 0 ? 2 : 1
                             Layout.fillWidth: true; Layout.fillHeight: true
                             Layout.preferredWidth: index === 0 ? 3 : 2; Layout.preferredHeight: 1
-                            Loader { anchors.fill: parent; sourceComponent: win.panelComp(parent.pname) }
+                            Loader { anchors.fill: parent; sourceComponent: win.panelComp(parent.pname); enabled: !win.wsEdit }   // при настройке панель не принимает нажатий
                             Rectangle {
                                 visible: win.wsEdit; anchors.fill: parent; radius: 6; color: Theme.tint(Theme.bg, 0.55); border.color: Theme.accent; border.width: 2
+                                MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; hoverEnabled: true; onWheel: function (e) { e.accepted = true } }   // щелчок по накладке не уходит в кнопки панели под ней
                                 ColumnLayout {
                                     anchors.centerIn: parent; spacing: 8
                                     Label { text: "Ячейка " + (index + 1) + (index === 0 ? " (большая)" : ""); color: Theme.accent; font.bold: true; Layout.alignment: Qt.AlignHCenter }
