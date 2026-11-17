@@ -579,6 +579,7 @@ ApplicationWindow {
                 ColumnLayout {
                     anchors.fill: parent; anchors.margins: 8; spacing: 0
                     Label { text: s.shipClock || win.now; color: Theme.text; font.family: Theme.mono; font.pixelSize: 24; Layout.alignment: Qt.AlignRight }
+                    Label { text: s.shipDate || ""; color: Theme.dim; font.pixelSize: 12; Layout.alignment: Qt.AlignRight; visible: !!s.shipDate }
                     Label { text: (s.zone || "") + " · " + (s.timeGnss ? "GNSS" : "ПК") + (s.sim ? " · t " + Theme.num(s.clock, 0) + " с" : ""); color: s.zonePending ? Theme.warn : Theme.dim; font.pixelSize: 12; Layout.alignment: Qt.AlignRight }
                 }
                 MouseArea { anchors.fill: parent; onClicked: win.tabIndex = 6 }   // часы → вкладка «Настройки»
@@ -870,7 +871,7 @@ ApplicationWindow {
                         }
                         RowLayout {
                             spacing: 8
-                            Label { text: "Сейчас " + (s.zone || "") + (s.zoneSuggest ? " · по долготе " + s.zoneSuggest : " · положение ещё не известно — пояс компьютера"); color: Theme.text; font.pixelSize: 15; Layout.fillWidth: true }
+                            Label { text: "Сейчас " + (s.zone || "") + (s.zoneSuggest ? " · по долготе " + s.zoneSuggest : " · положение ещё не известно — пояс компьютера"); color: Theme.text; font.pixelSize: 15; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                             Btn { text: "−1 ч"; onClicked: { const z = s.zoneMin - 60; core.command("zone " + (z < 0 ? "-" : "+") + Math.floor(Math.abs(z) / 60) + ":" + ("0" + Math.abs(z) % 60).slice(-2)) } }
                             Btn { text: "+1 ч"; onClicked: { const z = s.zoneMin + 60; core.command("zone " + (z < 0 ? "-" : "+") + Math.floor(Math.abs(z) / 60) + ":" + ("0" + Math.abs(z) % 60).slice(-2)) } }
                             Btn { text: "Как на компьютере"; onClicked: core.command("zone pc") }

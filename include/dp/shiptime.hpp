@@ -78,7 +78,9 @@ struct TimeMsg { std::string code, text; int prio; };   // prio: 2 — пред�
 class ShipTime {
 public:
     enum Source { Gnss = 0, Pc = 1 };
-    double gnssFreshS = 5.0;     // время GNSS считается свежим столько секунд после приёма
+    double gnssFreshS = 5.0;     // приёмник считается живым столько секунд после приёма (выбор основного, сверка приёмников)
+    double gnssHoldS = 60.0;     // столько секунд после последнего приёма судовое время ведётся от GNSS по часам ядра (ZDA бывает раз в 10 с)
+    double diffOffS = 1.5;       // TIME_PC_DIFF и TIME_RX_DIFF снимаются, когда расхождение меньше этого (включаются — больше maxDiffS)
     double maxDiffS = 2.0;       // допустимое расхождение GNSS и часов компьютера, с
     double jumpS = 2.0;          // скачок времени GNSS больше этого — предупреждение
     double jumpHoldS = 60.0;     // предупреждение о скачке держится столько секунд
@@ -109,18 +111,19 @@ public:
     // now — те же часы, что в feedGnss; pcUtc — часы компьютера (UTC); lonValid/lonDeg — долгота судна; sim — работает имитатор.
     void update(double now, double pcUtc, bool lonValid, double lonDeg, bool sim, std::vector<TimeMsg>& out, std::vector<std::string>& infos) {
         now_ = now; sim_ = sim;
-        const bool fresh = hasG_ && now - gAt_ <= gnssFreshS;
+        const bool fresh = hasG_ && now - gAt_ <= gnssHoldS;
         usingGnss_ = !sim && src_ == Gnss && fresh;
         utc_ = usingGnss_ ? gUtc_ + (now - gAt_) : pcUtc;
         if (!sim && src_ == Gnss && !fresh && !fallbackSaid_) { infos.push_back("Время: нет данных GNSS (ZDA, RMC) — судовое время по часам компьютера"); fallbackSaid_ = true; }
         if (fresh) fallbackSaid_ = false;
         if (!sim && fresh) {
             pcDiff_ = gUtc_ + (now - gAt_) - pcUtc;
-            if (std::fabs(pcDiff_) > maxDiffS) {
+            pcOn_ = std::fabs(pcDiff_) > (pcOn_ ? diffOffS : maxDiffS);   // гистерезис: у порога не мигает
+            if (pcOn_) {
                 char b[256]; std::snprintf(b, sizeof b, "Часы компьютера расходятся с GNSS на %.0f с — судовое время %s", pcDiff_, usingGnss_ ? "по GNSS" : "по компьютеру (выбрано оператором)");
                 out.push_back({"TIME_PC_DIFF", b, 2});
             }
-        } else pcDiff_ = 0;
+        } else { pcDiff_ = 0; pcOn_ = false; }
         if (!sim && now < jumpUntil_) {
             char b[256]; std::snprintf(b, sizeof b, "Скачок или задержка времени GNSS%s%s на %.0f с — сбой приёмника, задержка передачи или подмена сигнала; проверьте приёмник", jumpCh_.empty() ? "" : " ", jumpCh_.c_str(), jumpBy_);
             out.push_back({"TIME_JUMP", b, 2});
@@ -133,11 +136,12 @@ public:
                 const double d = kv.second.utc + (now - kv.second.at) - pu;
                 if (std::fabs(d) > std::fabs(worst)) { worst = d; who = kv.first; }
             }
-            if (std::fabs(worst) > maxDiffS) {
+            rxOn_ = std::fabs(worst) > (rxOn_ ? diffOffS : maxDiffS);
+            if (rxOn_) {
                 char b[256]; std::snprintf(b, sizeof b, "Время приёмников GNSS расходится: %s на %.0f с от %s — судовое время по %s", who.c_str(), worst, primary_.c_str(), primary_.c_str());
                 out.push_back({"TIME_RX_DIFF", b, 2});
             }
-        }
+        } else rxOn_ = false;
         // пояс по долготе
         if (lonValid && std::isfinite(lonDeg)) {
             const int sug = suggestFrom(lonDeg);
@@ -169,7 +173,7 @@ public:
     int zoneMin() const { return zone_; }
     bool usingGnss() const { return usingGnss_; }
     Source source() const { return src_; }
-    bool gnssFresh() const { return hasG_ && now_ - gAt_ <= gnssFreshS; }
+    bool gnssFresh() const { return hasG_ && now_ - gAt_ <= gnssHoldS; }
     double pcDiff() const { return pcDiff_; }
     bool suggestValid() const { return sugValid_; }
     int suggestMin() const { return sug_; }
@@ -187,7 +191,7 @@ private:
     bool sim_ = false, hasG_ = false, usingGnss_ = false, zoneSet_ = false, sugValid_ = false, fallbackSaid_ = false;
     double gUtc_ = 0, gAt_ = -1e9, utc_ = 0, now_ = 0, pcDiff_ = 0, jumpUntil_ = -1e9, jumpBy_ = 0;
     struct Rx { bool has = false; double at = -1e9, utc = 0, ref = 0; int bad = 0; };
-    std::map<std::string, Rx> rx_; std::string jumpCh_, primary_;
+    std::map<std::string, Rx> rx_; std::string jumpCh_, primary_; bool pcOn_ = false, rxOn_ = false;
     int zone_ = pcZoneMin(), sug_ = 0, ackSug_ = 0;
 
     int suggestFrom(double lon) const {   // морской пояс: целые часы по 15° долготы, с гистерезисом у границы

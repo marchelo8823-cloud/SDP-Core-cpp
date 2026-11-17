@@ -34,8 +34,8 @@ int main(int argc, char** argv) {
         CHECK(!has(m, "TIME_JUMP"), "одиночный выброс времени GNSS — ещё не скачок");
         st.feedGnss(u + 1.1 + 30.0, 2.1); m.clear(); st.update(2.15, u + 31.15, false, 0, false, m, inf);
         CHECK(has(m, "TIME_JUMP"), "время GNSS прыгнуло на 30 с (два приёма подряд) — TIME_JUMP");
-        m.clear(); st.update(20.0, pc + 20, false, 0, false, m, inf);
-        CHECK(!st.usingGnss(), "GNSS устарело — запасной источник: компьютер");
+        m.clear(); st.update(70.0, pc + 70, false, 0, false, m, inf);
+        CHECK(!st.usingGnss(), "GNSS молчит больше 60 с — запасной источник: компьютер");
         st.setSource(ShipTime::Pc); st.feedGnss(u + 100, 30.0); m.clear(); st.update(30.1, pc + 50, false, 0, false, m, inf);
         CHECK(!st.usingGnss() && std::fabs(st.utc() - (pc + 50)) < 1e-6, "выбран компьютер — GNSS не используется");
         CHECK(has(m, "TIME_PC_DIFF"), "но расхождение с GNSS всё равно показывается");
@@ -52,11 +52,28 @@ int main(int argc, char** argv) {
             const double t0 = i * 0.5; if (i % 2 == 0) a2.feedGnss(u + t0, t0, "G1"); else a2.feedGnss(u + t0 + 3.0, t0, "G2");
             m.clear(); a2.update(t0 + 0.1, u + t0 + 0.1, false, 0, false, m, inf);
             const bool pc = has(m, "TIME_PC_DIFF"); if (i > 0 && pc != wasPc) ++flipsPc; wasPc = pc; rxd = rxd || has(m, "TIME_RX_DIFF");
-            if (i > 0 && a2.utc() < prev) ++back; prev = a2.utc();
+            if (i > 0 && a2.utc() < prev) { ++back; }
+            prev = a2.utc();
         }
         CHECK(flipsPc == 0 && back == 0 && rxd, "два приёмника на 3 с врозь: показ по основному без скачков, одно TIME_RX_DIFF");
         ShipTime g; for (int i = 0; i < 5; ++i) g.feedGnss(u + i, i, "G"); g.feedGnss(u + 40 + 3600, 40, "G"); m.clear(); g.update(40.1, u + 40.1, false, 0, false, m, inf);
         CHECK(has(m, "TIME_JUMP"), "перерыв больше 30 с и возврат со скачком на 1 ч — TIME_JUMP");
+        ShipTime hy; int fl = 0; bool was2 = false; unsigned rnd = 7;   // часы компьютера отстают ровно на 2 с, ZDA раз в 1 с с дрожанием ±0,1 с
+        for (int i = 0; i < 600; ++i) {
+            rnd = rnd * 1103515245u + 12345u; const double jit = ((rnd >> 16) % 200) / 1000.0 - 0.1;
+            hy.feedGnss(u + i, i + 0.05 + jit, "G"); m.clear(); hy.update(i + 0.5, u + i + 0.5 - 2.0, false, 0, false, m, inf);
+            const bool on = has(m, "TIME_PC_DIFF"); if (on != was2) ++fl; was2 = on;
+        }
+        CHECK(fl <= 1, "расхождение с компьютером у порога 2 с — TIME_PC_DIFF не мигает (гистерезис)");
+        ShipTime z; int back2 = 0, srcFlips = 0; bool g0 = true; double pv = 0;   // ZDA раз в 10 с, часы компьютера отстают на 30 с
+        for (int i = 0; i < 600; ++i) {
+            const double t0 = i * 0.1; if (i % 100 == 0) z.feedGnss(u + t0, t0, "G");
+            m.clear(); z.update(t0, u + t0 - 30.0, false, 0, false, m, inf);
+            if (i > 0 && z.utc() < pv - 1e-6) { ++back2; }
+            if (i > 0 && z.usingGnss() != g0) { ++srcFlips; }
+            g0 = z.usingGnss(); pv = z.utc();
+        }
+        CHECK(back2 == 0 && srcFlips == 0 && z.usingGnss(), "ZDA раз в 10 с — источник не переключается, время назад не идёт");
         ShipTime b; j = false;   // пачка строк из буфера: 4 строки за 1 с с задержкой до 1,5 с, дальше ровно
         for (int i = 0; i < 5; ++i) b.feedGnss(u + i, i, "G");
         for (int k2 = 1; k2 <= 4; ++k2) { b.feedGnss(u + 4 + k2 * 0.5, 6.0 + 0.25 * k2, "G"); m.clear(); b.update(6.0 + 0.25 * k2, u + 6, false, 0, false, m, inf); j = j || has(m, "TIME_JUMP"); }
