@@ -1,7 +1,9 @@
 #include "hmicore.h"
 #include <QDateTime>
 #include <QUrl>
+#include <QSettings>
 #include <cmath>
+#include <limits>
 
 using namespace dp;
 
@@ -49,12 +51,29 @@ void HmiCore::runFor(double seconds) {
     while (core_.clock() < until) {
         core_.cycle();
         const EngineOutput& o = core_.out();
-        if (core_.hasShip() && o.est.posValid && core_.clock() - lastTrail_ >= 2.0) { trail_.push_back({o.est.n, o.est.e}); lastTrail_ = core_.clock(); if (trail_.size() > 450) trail_.pop_front(); sample(o.alloc.utilization); }
+        if (core_.hasShip() && core_.clock() - lastTrail_ >= 2.0) { if (o.est.posValid) trail_.push_back({o.est.n, o.est.e}); lastTrail_ = core_.clock(); if (trail_.size() > 450) trail_.pop_front(); sample(o.alloc.utilization); }
     }
     refresh();
 }
 
-void HmiCore::sample(double load) { loadHist_.push_back(load); while (loadHist_.size() > 150) loadHist_.pop_front(); }
+QString HmiCore::setting(const QString& key) const { return ephemeral_ ? mem_.value(key) : QSettings("SDP", "sdp_hmi").value(key).toString(); }
+void HmiCore::setSetting(const QString& key, const QString& value) { if (ephemeral_) { mem_[key] = value; return; } QSettings q("SDP", "sdp_hmi"); q.setValue(key, value); }
+void HmiCore::note(const QString& text) { say(text.toStdString()); }
+
+void HmiCore::sample(double load) {
+    loadHist_.push_back(load); while (loadHist_.size() > 150) loadHist_.pop_front();
+    const EngineOutput& o = core_.out();
+    double op = o.ctl.errDist;
+    if (DpEngine* eng = core_.engine()) { const auto& ctl = eng->controller(); const Setpoint sp = ctl.setpoint(), hp = ctl.holdFromCrp(o.est.n, o.est.e, rad2deg(o.est.psi)); op = std::hypot(hp.n - sp.n, hp.e - sp.e); }
+    auto push = [](std::deque<double>& d, double v) { d.push_back(v); while (d.size() > 450) d.pop_front(); };
+    const bool act = core_.state() == CoreState::Active;
+    // нет данных — разрыв линии (NaN), а не ноль: до включения режима, не в «Позиции», при счислении положения, без курса
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const bool pos = act && core_.mode() == DpMode::AutoPosition && o.est.posValid && !o.est.refLost;
+    push(trOpErr_, pos ? op : nan); push(trErrHdg_, act && o.est.hdgValid && !o.est.hdgDeadReckon ? o.ctl.errHdgDeg : nan); push(trLoad_, load); push(trWind_, o.est.windValid ? o.est.windSpeed : nan);
+    auto list = [](const std::deque<double>& d) { QVariantList l; for (double v : d) l.push_back(v); return l; };
+    trends_["opErr"] = list(trOpErr_); trends_["errHdg"] = list(trErrHdg_); trends_["load"] = list(trLoad_); trends_["wind"] = list(trWind_);
+}
 
 void HmiCore::refresh() {
     const EngineOutput& o = core_.out();
@@ -169,7 +188,7 @@ void HmiCore::refresh() {
     std::stable_sort(al.begin(), al.end(), [](const QVariant& a, const QVariant& b) { return a.toMap()["level"].toInt() < b.toMap()["level"].toInt(); });
     alm_ = al;
 
-    if (core_.hasShip() && es.posValid && core_.clock() - lastTrail_ >= 2.0) { trail_.push_back({es.n, es.e}); lastTrail_ = core_.clock(); if (trail_.size() > 450) trail_.pop_front(); sample(o.alloc.utilization); }
+    if (core_.hasShip() && core_.clock() - lastTrail_ >= 2.0) { if (es.posValid) trail_.push_back({es.n, es.e}); lastTrail_ = core_.clock(); if (trail_.size() > 450) trail_.pop_front(); sample(o.alloc.utilization); }
     { QVariantList lh; for (double v : loadHist_) lh.push_back(v); s_["loadHist"] = lh; }
     QVariantList tk; for (const auto& p : trail_) { tk.push_back(p.first); tk.push_back(p.second); }
     trk_ = tk;

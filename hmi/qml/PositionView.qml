@@ -32,6 +32,7 @@ Rectangle {
                 return
             }
             const R = Math.min(W, H) / 2 - 62       // место снаружи — под круг с градусами
+            if (R < 40) return                       // окно ещё не разложено или слишком мало
             const k = R / root.range                 // пикселей на метр
             const cx = W / 2, cy = H / 2
             const c0n = root.followVessel ? s.n : s.refN, c0e = root.followVessel ? s.e : s.refE
@@ -172,6 +173,7 @@ Rectangle {
     }
     Column {
         anchors.left: parent.left; anchors.top: parent.top; anchors.margins: 12
+        visible: root.height - root.width >= 100 || root.width - root.height >= 420   // в тесной ячейке легенда налезает на круг — прячем
         spacing: 2
         Repeater {
             model: s.sim ? [["＋", Theme.accent, "заданная точка"], ["—", Theme.vessel, "судно (оценка ядра)"], ["×", Theme.dim, "истинное положение (имитатор)"], ["→", Theme.wind, "ветер, откуда"], ["→", Theme.dist, "внешнее возмущение, откуда"]] : [["＋", Theme.accent, "заданная точка"], ["—", Theme.vessel, "судно (оценка ядра)"], ["→", Theme.wind, "ветер, откуда"], ["→", Theme.dist, "внешнее возмущение, откуда"]]

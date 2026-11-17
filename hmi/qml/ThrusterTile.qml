@@ -21,7 +21,7 @@ Rectangle {
         RowLayout {
             Layout.fillWidth: true
             Label { text: t.id || ""; color: Theme.text; font.bold: true; font.pixelSize: 17 }
-            Label { text: t.type || ""; color: Theme.dim; font.pixelSize: Theme.fsSmall; Layout.fillWidth: true }
+            Label { text: tile.width >= 300 ? (t.type || "") : ""; color: Theme.dim; font.pixelSize: Theme.fsSmall; Layout.fillWidth: true; elide: Text.ElideRight }
             Rectangle {
                 radius: 2; implicitWidth: st.implicitWidth + 10; implicitHeight: st.implicitHeight + 4
                 color: t.failed ? Theme.alarm : t.fbLost ? Theme.tint(Theme.warn, 0.22) : cut && t.taken ? Theme.tint(Theme.alarm, 0.22) : t.taken ? Theme.tint(Theme.ok, 0.18) : Theme.line
@@ -34,6 +34,7 @@ Rectangle {
             Layout.fillWidth: true; Layout.fillHeight: true; spacing: 10
             Canvas {
                 id: dial
+                visible: tile.width >= 300          // в узкой ячейке — только числа и полоса
                 Layout.preferredWidth: 110; Layout.preferredHeight: 110
                 onPaint: {
                     const g = getContext("2d"); g.reset()
