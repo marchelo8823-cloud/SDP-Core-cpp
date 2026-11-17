@@ -400,6 +400,12 @@ public:
     void setSimSeed(unsigned s) { seedOverride_ = s; }   // для проверок: начальное число имитатора вместо книги (0 — из книги)
     DpMode mode() const { return sh_ ? sh_->eng->mode() : DpMode::Standby; }
     const AppCfg* ship() const { return sh_ ? &sh_->cfg : nullptr; }
+    const SensorHub* hub() const { return sh_ ? sh_->hub.get() : nullptr; }       // каналы датчиков — для показа на пульте
+    // местные координаты (n, e) → широта и долгота; false — начало координат в книге судна не задано
+    bool geo(double n, double e, double& latDeg, double& lonDeg) const {
+        if (!sh_ || !sh_->cfg.originSet) return false;
+        lf_.toGeo(n, e, latDeg, lonDeg); return true;
+    }
     Simulator* sim() { return sim_.get(); }
     AlarmMgr& alarms() { return alarms_; }
     bool quitRequested() const { return quit_; }
