@@ -575,12 +575,14 @@ ApplicationWindow {
             }
             Btn { text: "Квитировать"; Layout.preferredWidth: 130; Layout.maximumWidth: 130; Layout.fillHeight: true; font.bold: true; onClicked: core.ack() }
             Panel {
-                Layout.preferredWidth: 150; Layout.fillHeight: true
+                Layout.preferredWidth: 170; Layout.fillHeight: true
                 ColumnLayout {
                     anchors.fill: parent; anchors.margins: 8; spacing: 0
-                    Label { text: win.now; color: Theme.text; font.family: Theme.mono; font.pixelSize: 24; Layout.alignment: Qt.AlignRight }
-                    Label { text: Qt.formatDate(new Date(), "dd.MM.yyyy"); color: Theme.dim; font.pixelSize: 12; Layout.alignment: Qt.AlignRight }
+                    Label { text: s.shipClock || win.now; color: Theme.text; font.family: Theme.mono; font.pixelSize: 24; Layout.alignment: Qt.AlignRight }
+                    Label { text: s.shipDate || ""; color: Theme.dim; font.pixelSize: 12; Layout.alignment: Qt.AlignRight; visible: !!s.shipDate }
+                    Label { text: (s.zone || "") + " · " + (s.timeGnss ? "GNSS" : "ПК") + (s.sim ? " · t " + Theme.num(s.clock, 0) + " с" : ""); color: s.zonePending ? Theme.warn : Theme.dim; font.pixelSize: 12; Layout.alignment: Qt.AlignRight }
                 }
+                MouseArea { anchors.fill: parent; onClicked: win.tabIndex = 6 }   // часы → вкладка «Настройки»
             }
             ColumnLayout {
                 Layout.preferredWidth: 150; Layout.maximumWidth: 150; Layout.fillWidth: false; Layout.fillHeight: true; spacing: 6
@@ -598,7 +600,7 @@ ApplicationWindow {
             onCurrentIndexChanged: win.tabIndex = currentIndex
             background: Rectangle { color: Theme.bg; Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.line } }
             Repeater {
-                model: [["Главный", 0], ["Своё рабочее место", 0], ["Опорные системы", win.sensorBad], ["Движители", win.thrBad], ["Тренды", 0], ["Тревоги и журнал", core.alarms.length]]
+                model: [["Главный", 0], ["Своё рабочее место", 0], ["Опорные системы", win.sensorBad], ["Движители", win.thrBad], ["Тренды", 0], ["Тревоги и журнал", core.alarms.length], ["Настройки", s.zonePending ? 1 : 0]]
                 delegate: TabButton {
                     text: modelData[0] + (modelData[1] > 0 ? "  ●" + modelData[1] : "")
                     width: implicitWidth + 28; font.pixelSize: 15; font.bold: tabs.currentIndex === index
@@ -824,6 +826,62 @@ ApplicationWindow {
                 spacing: 12
                 AlarmsCard { Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredWidth: 1 }
                 LogCard { Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredWidth: 1 }
+            }
+
+            // ------------------------------------------ 6. Настройки: судовое время
+            RowLayout {
+                spacing: 12
+                Panel {
+                    Layout.preferredWidth: 760; Layout.fillHeight: true
+                    ColumnLayout {
+                        anchors.fill: parent; anchors.margins: 18; spacing: 12
+                        Caption { text: "Судовое время" }
+                        RowLayout {
+                            spacing: 24
+                            ColumnLayout {
+                                spacing: 0
+                                Label { text: s.shipClock || "—"; color: Theme.text; font.family: Theme.mono; font.pixelSize: 54 }
+                                Label { text: (s.shipDate || "") + " · " + (s.zone || ""); color: Theme.dim; font.pixelSize: 16 }
+                            }
+                            ColumnLayout {
+                                spacing: 4
+                                Label { text: "UTC " + (s.utcClock || "—"); color: Theme.text; font.family: Theme.mono; font.pixelSize: 22 }
+                                Label { text: "источник: " + (s.timeSrc || "—"); color: s.timeGnss || s.sim ? Theme.ok : Theme.warn; font.pixelSize: 15 }
+                                Label { visible: s.gnssTimeFresh === true; text: "часы компьютера: " + (Math.abs(s.pcDiff) < 0.5 ? "совпадают с GNSS" : (s.pcDiff > 0 ? "отстают" : "спешат") + " на " + Theme.num(Math.abs(s.pcDiff), 1) + " с")
+                                        color: Math.abs(s.pcDiff) > 2 ? Theme.warn : Theme.dim; font.pixelSize: 14 }
+                            }
+                        }
+                        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+                        Label { text: "Источник UTC"; color: Theme.dim; font.pixelSize: 14 }
+                        RowLayout {
+                            spacing: 8
+                            Btn { text: "GNSS (запасной — компьютер)"; highlighted: !s.timeSrcPc; Layout.fillWidth: true; onClicked: core.command("time gnss") }
+                            Btn { text: "Часы компьютера"; highlighted: s.timeSrcPc === true; Layout.fillWidth: true; onClicked: core.command("time pc") }
+                        }
+                        Label { text: "Внутри ядра всегда UTC. Журнал пульта — по судовому времени с поясом в каждой строке (+3, +5:30). Время GNSS каждого приёмника сверяется с часами компьютера и с самим собой: скачок, замёрзшее время или увод — предупреждение TIME_JUMP."; color: Theme.dim; font.pixelSize: 13; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+                        Label { text: "Судовой пояс"; color: Theme.dim; font.pixelSize: 14 }
+                        Rectangle {
+                            visible: s.zonePending === true; Layout.fillWidth: true; implicitHeight: 64; radius: 6
+                            color: Theme.tint(Theme.warn, 0.14); border.color: Theme.warn; border.width: 2
+                            RowLayout {
+                                anchors.fill: parent; anchors.margins: 12; spacing: 12
+                                Label { text: "Судно в поясе " + (s.zoneSuggest || "") + ", судовое время " + (s.zone || ""); color: Theme.warn; font.pixelSize: 15; font.bold: true; Layout.fillWidth: true; wrapMode: Text.Wrap }
+                                ConfirmBtn { label: "Перевести на " + (s.zoneSuggest || ""); cmd: "zone accept" }
+                            }
+                        }
+                        RowLayout {
+                            spacing: 8
+                            Label { text: "Сейчас " + (s.zone || "") + (s.zoneSuggest ? " · по долготе " + s.zoneSuggest : " · положение ещё не известно — пояс компьютера"); color: Theme.text; font.pixelSize: 15; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                            Btn { text: "−1 ч"; onClicked: { const z = s.zoneMin - 60; core.command("zone " + (z < 0 ? "-" : "+") + Math.floor(Math.abs(z) / 60) + ":" + ("0" + Math.abs(z) % 60).slice(-2)) } }
+                            Btn { text: "+1 ч"; onClicked: { const z = s.zoneMin + 60; core.command("zone " + (z < 0 ? "-" : "+") + Math.floor(Math.abs(z) / 60) + ":" + ("0" + Math.abs(z) % 60).slice(-2)) } }
+                            Btn { text: "Как на компьютере"; onClicked: core.command("zone pc") }
+                        }
+                        Label { text: "Пояс сам не меняется: при переходе в другой пояс — предупреждение, переводит оператор (как на судне — по распоряжению капитана). Перевод пишется в журнал."; color: Theme.dim; font.pixelSize: 13; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                        Item { Layout.fillHeight: true }
+                    }
+                }
+                LogCard { Layout.fillWidth: true; Layout.fillHeight: true }
             }
         }
     }

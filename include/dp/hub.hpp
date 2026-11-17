@@ -7,6 +7,7 @@
 #include <map>
 #include <mutex>
 
+#include "dp/shiptime.hpp"
 #include "dp/nmea.hpp"
 #include "dp/telegrams.hpp"
 #include "dp/types.hpp"
@@ -87,7 +88,7 @@ inline std::string knownSentences(ChannelKind k) {
 // Набор по умолчанию — поведение до появления настройки (VTG, HDM и VHW включаются только вручную).
 inline std::string defaultSentences(ChannelKind k) {
     switch (k) {
-        case ChannelKind::Gnss: return "GGA,GLL,RMC";
+        case ChannelKind::Gnss: return "GGA,GLL,RMC,ZDA";   // ZDA — только время (судовое время), в решение не входит
         case ChannelKind::Gyro: return "HDT,THS";
         case ChannelKind::LaserRadar: return "DPREL,RLS,PGNMT";
         default: return knownSentences(k);
@@ -315,6 +316,15 @@ public:
         return fr;
     }
 
+    // Время UTC от каждого приёмника GNSS, от которого оно было: имя канала, время, когда принято.
+    struct UtcRx { std::string id; double utc, at; };
+    std::vector<UtcRx> gnssUtc() const {
+        std::lock_guard<std::mutex> lk(m_); std::vector<UtcRx> r;
+        for (const auto& kv : ch_) if (kv.second.cfg.kind == ChannelKind::Gnss && kv.second.utcAt > -1e8) r.push_back({kv.first, kv.second.utc, kv.second.utcAt});
+        return r;
+    }
+    bool toGeo(double n, double e, double& lat, double& lon) const { std::lock_guard<std::mutex> lk(m_); if (!frame_.valid()) return false; frame_.toGeo(n, e, lat, lon); return true; }
+
     std::vector<ChannelStats> stats() const {
         std::lock_guard<std::mutex> lk(m_);
         std::vector<ChannelStats> r;
@@ -333,6 +343,7 @@ private:
         bool hdgSeen = false;                                    // курс принят хотя бы раз (для пересчёта $RLS)
         double gstSigma = 0, gstT = -1e9;                       // СКО положения из GST (на ось, м) и время приёма
         std::string gnssInfo;                                    // DOP/тип решения/время из GSA, ZDA (только показ)
+        double utc = 0, utcAt = -1e9;                            // время UTC из ZDA (или RMC, если ZDA нет) и когда принято
         bool rotValid = false; double rotDegMin = 0;             // скорость поворота из ROT (только показ)
         bool sogValid = false; double sogKn = 0, cogDeg = 0;    // скорость и курс над грунтом из VTG (только показ)
         std::deque<RawLine> raw; long long seq = 0; std::deque<double> arrivals;
@@ -385,9 +396,11 @@ private:
             char b[96]; std::snprintf(b, sizeof b, "%s PDOP %.1f HDOP %.1f VDOP %.1f", fx == 3 ? "3D" : fx == 2 ? "2D" : "нет решения", p, h, v);
             c.gnssInfo = b; return true;
         }
-        if (s.type == "ZDA" && s.f.size() >= 4) {   // $--ZDA: время и дата UTC — только показ
+        if (s.type == "ZDA" && s.f.size() >= 4) {   // $--ZDA: время и дата UTC — показ и судовое время (shiptime.hpp)
             char b[48]; std::snprintf(b, sizeof b, "UTC %s %s.%s.%s", s.f[0].substr(0, 6).c_str(), s.f[1].c_str(), s.f[2].c_str(), s.f[3].c_str());
-            c.gnssInfo = b; return true;
+            c.gnssInfo = b;
+            double u; if (nmeaUtc(s.f[0], std::atoi(s.f[1].c_str()), std::atoi(s.f[2].c_str()), std::atoi(s.f[3].c_str()), u)) { c.utc = u; c.utcAt = now; }
+            return true;
         }
         if ((s.type == "GGA" || (s.proprietary && s.type == "DPGGA")) && s.f.size() >= 8) {
             int q = std::atoi(s.f[5].c_str());
@@ -404,6 +417,10 @@ private:
         if (s.type == "RMC" && s.f.size() >= 6) {
             if (s.f[1] != "A") return reject(c, "RMC: данные недостоверны");
             if (!nmea::parseAngle(s.f[2], s.f[3], true, lat) || !nmea::parseAngle(s.f[4], s.f[5], false, lon)) return reject(c, "нет координат в RMC");
+            if (s.f.size() >= 9 && s.f[8].size() == 6 && s.f[8].find_first_not_of("0123456789") == std::string::npos) {   // время (поле 1) и дата ддммгг (поле 9) — судовое время, если нет ZDA
+                const std::string& d = s.f[8]; double u;
+                if (now - c.utcAt > 1.5 && nmeaUtc(s.f[0], std::atoi(d.substr(0, 2).c_str()), std::atoi(d.substr(2, 2).c_str()), 2000 + std::atoi(d.substr(4, 2).c_str()), u)) { c.utc = u; c.utcAt = now; }
+            }
             return setPosGeo(c, lat, lon, now);
         }
         if (s.type == "VTG" && s.f.size() >= 5) {   // курс и скорость над грунтом: только показ, в решение не входит (не свежий отсчёт позиции)

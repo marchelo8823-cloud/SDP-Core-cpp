@@ -23,7 +23,7 @@ int main() {
 
     h.ingest("G", GGA, 1.0); h.ingest("G", RMC, 1.0); h.ingest("G", VTG, 1.0);
     CHECK(info("G").accepted == 2 && info("G").ignored == 1, "по умолчанию: GGA и RMC принимаются, VTG игнорируется");
-    CHECK(info("G").accept == "GGA,GLL,RMC", "по умолчанию — прежний набор");
+    CHECK(info("G").accept == "GGA,GLL,RMC,ZDA", "по умолчанию — GGA, GLL, RMC и ZDA (ZDA — только судовое время, 17.11.2026)");
 
     CHECK(h.setParam("G", "accept", "gga,vtg", why), "accept GGA,VTG задан");
     h.ingest("G", GGA, 2.0); h.ingest("G", RMC, 2.0); h.ingest("G", VTG, 2.0);
