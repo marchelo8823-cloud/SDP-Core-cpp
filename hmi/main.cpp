@@ -11,6 +11,8 @@
 #include <QQuickWindow>
 #include <QTimer>
 #include <QImage>
+#include <QMouseEvent>
+#include <QQuickItem>
 #include <QQmlError>
 #include <cstdio>
 #include <functional>
@@ -21,7 +23,7 @@ int main(int argc, char** argv) {
     app.setApplicationName("SDP HMI");
     app.setOrganizationName("SDP");
     QStringList a = app.arguments();
-    QString shot; int w = 1920, h = 1080, tab = 0; QStringList presses; int expectMode = -1, expectCa = -1; QString expectState;
+    QString shot; int w = 1920, h = 1080, tab = 0; QStringList presses, clicks; int expectMode = -1, expectCa = -1, expectTaken = -1, wsSet = -1; bool wsEdit = false; QString expectState;
     HmiCore core;
     for (int i = 1; i < a.size(); ++i) {
         auto next = [&]() { return i + 1 < a.size() ? a[++i] : QString(); };
@@ -36,8 +38,13 @@ int main(int argc, char** argv) {
         else if (k == "--expect-ca") expectCa = next().toInt();
         else if (k == "--expect-state") expectState = next();
         else if (k == "--tab") tab = next().toInt();
+        else if (k == "--click") clicks << next();          // настоящий щелчок мыши в середину кнопки с этой надписью
+        else if (k == "--ws-set") wsSet = next().toInt();   // набор рабочего места 0…2
+        else if (k == "--ws-edit") wsEdit = true;           // режим «Настроить»
+        else if (k == "--expect-taken") expectTaken = next().toInt();
         else if (k == "--size") { const QStringList p = next().split('x'); if (p.size() == 2) { w = p[0].toInt(); h = p[1].toInt(); } }
     }
+    if (!clicks.isEmpty() || wsSet >= 0) core.setEphemeral(true);   // проверки не трогают настройки пользователя
     QQmlApplicationEngine eng;
     int qmlWarnings = 0;   // ошибки и предупреждения QML: при проверке со снимком — код выхода 3
     QObject::connect(&eng, &QQmlApplicationEngine::warnings, [&](const QList<QQmlError>& ws) {
@@ -57,7 +64,35 @@ int main(int argc, char** argv) {
         }
         std::fprintf(stderr, "кнопка «%s» не найдена\n", t.toUtf8().constData()); return false;
     };
+    // настоящий щелчок: события мыши окну в середину видимой кнопки — проходит через всё, что лежит сверху (накладки)
+    std::function<QQuickItem*(QQuickItem*, const QString&)> findBtn = [&](QQuickItem* it, const QString& t) -> QQuickItem* {
+        if (!it || !it->isVisible()) return nullptr;
+        if (it->metaObject()->indexOfSignal("clicked()") >= 0 && it->property("text").toString() == t) return it;
+        for (QQuickItem* c : it->childItems()) if (QQuickItem* r = findBtn(c, t)) return r;
+        return nullptr;
+    };
+    auto click = [&](const QString& t) -> bool {
+        QQuickItem* b = findBtn(win->contentItem(), t);
+        if (!b) { std::fprintf(stderr, "кнопка «%s» для щелчка не найдена\n", t.toUtf8().constData()); return false; }
+        const QPointF p = b->mapToScene(QPointF(b->width() / 2, b->height() / 2)), g = win->mapToGlobal(p.toPoint());
+        QMouseEvent pr(QEvent::MouseButtonPress, p, p, g, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(win, &pr);
+        QMouseEvent rl(QEvent::MouseButtonRelease, p, p, g, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(win, &rl);
+        return true;
+    };
+    if (win && wsSet >= 0) QMetaObject::invokeMethod(win, "wsPick", Q_ARG(QVariant, wsSet));
+    if (win && wsEdit) win->setProperty("wsEdit", true);
     int exitPress = 0;
+    if (!clicks.isEmpty() && win) {
+        QTimer::singleShot(800, [&]() {
+            for (const QString& c : clicks) { if (!click(c)) exitPress = 5; core.runFor(0.5); }
+            int n = 0; for (const QVariant& v : core.property("thrusters").toList()) if (v.toMap().value("taken").toBool()) ++n;
+            std::printf("движителей под управлением после щелчков: %d\n", n);
+            if (expectTaken >= 0 && n != expectTaken) { std::fprintf(stderr, "ожидалось под управлением %d\n", expectTaken); exitPress = 4; }
+            if (shot.isEmpty()) QCoreApplication::exit(exitPress ? exitPress : qmlWarnings ? 3 : 0);
+        });
+    }
     if (!presses.isEmpty() && win) {
         QTimer::singleShot(800, [&]() {
             for (const QString& p : presses) { if (!press(p)) exitPress = 5; core.runFor(0.5); }

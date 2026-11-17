@@ -30,6 +30,21 @@ if(NOT WIN32)
     set_tests_properties(hmi_confirm_${n} PROPERTIES TIMEOUT 120)
   endforeach()
   # анализ последствий: кнопка «Класс 2» на пульте включает анализ
+  # Настройка рабочего места не подаёт команд: настоящий щелчок по «Взять все» под накладкой ячейки ничего не берёт,
+  # а без настройки тот же щелчок берёт все четыре движителя (проверка, что щелчок доходит).
+  foreach(cs "edit;0" "noedit;4")
+    list(GET cs 0 nm)
+    list(GET cs 1 et)
+    if(nm STREQUAL "edit")
+      set(ed --ws-edit)
+    else()
+      set(ed)
+    endif()
+    add_test(NAME hmi_ws_${nm} COMMAND ${CMAKE_COMMAND} -E env QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
+             $<TARGET_FILE:sdp_hmi> --ship ${CMAKE_SOURCE_DIR}/data/Данные_судна_пример.xlsx --sim ${CMAKE_SOURCE_DIR}/tests/scenarios/имитатор_быстро.xlsx
+             --run 20 --tab 1 --ws-set 1 ${ed} --click "Взять все" --expect-taken ${et}
+             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+  endforeach()
   add_test(NAME hmi_ca COMMAND ${CMAKE_COMMAND} -E env QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
            $<TARGET_FILE:sdp_hmi> --ship ${CMAKE_SOURCE_DIR}/data/Данные_судна_пример.xlsx --sim ${CMAKE_SOURCE_DIR}/tests/scenarios/имитатор_быстро.xlsx
            --run 20 --cmd "thr_take all" --cmd position --run 30 --press "Класс 2" --expect-ca 2

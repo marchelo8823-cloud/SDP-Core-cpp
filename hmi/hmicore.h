@@ -6,6 +6,7 @@
 #include <QVariant>
 #include <QStringList>
 #include <QHash>
+#include <QMap>
 #include <QDateTime>
 #include <deque>
 #include <memory>
@@ -41,6 +42,7 @@ public:
     Q_INVOKABLE void note(const QString& text);                   // запись оператора в журнал событий (смена вахты)
     void runFor(double seconds);                                  // прогнать ядро без реального времени (для проверок и снимков)
     void setPaused(bool p) { paused_ = p; }
+    void setEphemeral(bool e) { ephemeral_ = e; }                 // проверки: настройки только в памяти, файл пользователя не трогается
 
 signals:
     void changed();
@@ -48,6 +50,7 @@ signals:
     void logChanged();
 
 private:
+    bool ephemeral_ = false; QMap<QString, QString> mem_;
     void tick();
     void refresh();
     void say(const std::string& m);
