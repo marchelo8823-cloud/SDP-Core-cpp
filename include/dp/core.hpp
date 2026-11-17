@@ -155,8 +155,7 @@ public:
     // пояс по долготе — только если в данных судна задано начало координат (иначе пояс компьютера).
     void stepTime(SensorHub& hub) {
         const double hnow = sim_ ? t_ : monotonicSeconds();
-        double u = 0, at = 0;
-        if (!sim_ && hub.latestUtc(u, at) && at != lastUtcAt_) { st_.feedGnss(u, at); lastUtcAt_ = at; }
+        if (!sim_) for (const auto& r : hub.gnssUtc()) { double& last = lastUtcAt_.emplace(r.id, -1e18).first->second; if (r.at != last) { st_.feedGnss(r.utc, r.at, r.id); last = r.at; } }
         double lat = 0, lon = 0;
         const bool lv = out_.est.posValid && (!sim_ || sh_->cfg.originSet) && hub.toGeo(out_.est.n, out_.est.e, lat, lon);
         std::vector<TimeMsg> tm; std::vector<std::string> ti;
@@ -221,7 +220,9 @@ public:
             else if (w == "pc") say(st_.setZonePc());
             else if (!w.empty() && (w[0] == '+' || w[0] == '-' || (w[0] >= '0' && w[0] <= '9'))) {
                 const int sg = w[0] == '-' ? -1 : 1; const std::string v = (w[0] == '+' || w[0] == '-') ? w.substr(1) : w;
-                const size_t k = v.find(':'); const int hh = std::atoi(v.substr(0, k).c_str()), mm = k == std::string::npos ? 0 : std::atoi(v.substr(k + 1).c_str());
+                const size_t k = v.find(':'); const std::string hs = v.substr(0, k), ms = k == std::string::npos ? "0" : v.substr(k + 1);
+                const auto digits = [](const std::string& x) { return !x.empty() && x.size() <= 2 && x.find_first_not_of("0123456789") == std::string::npos; };
+                const int hh = digits(hs) ? std::atoi(hs.c_str()) : 99, mm = digits(ms) ? std::atoi(ms.c_str()) : 99;   // «--3», «5abc» — ошибка
                 if (hh > 14 || mm > 59) say("Формат: zone +3 | zone -3:30"); else say(st_.setZone(sg * (hh * 60 + mm)));
             }
             else say("Формат: zone accept | zone pc | zone +3 | zone -3:30");
@@ -498,7 +499,7 @@ private:
 
     CoreSettings set_; Say say_; double dt_;
     std::unique_ptr<Ship> sh_; std::string shipPath_; BookReport lastRep_;
-    ShipTime st_; double lastUtcAt_ = -1e18;
+    ShipTime st_; std::map<std::string, double> lastUtcAt_;   // время последнего приёма UTC по каждому приёмнику
     std::unique_ptr<Simulator> sim_; double simSpeed_ = 1.0;
     LocalFrame lf_;
     AlarmMgr alarms_;

@@ -848,7 +848,7 @@ ApplicationWindow {
                             Btn { text: "GNSS (запасной — компьютер)"; highlighted: !s.timeSrcPc; Layout.fillWidth: true; onClicked: core.command("time gnss") }
                             Btn { text: "Часы компьютера"; highlighted: s.timeSrcPc === true; Layout.fillWidth: true; onClicked: core.command("time pc") }
                         }
-                        Label { text: "Внутри ядра всегда UTC; журнал и запись — по UTC. Время GNSS сверяется с часами компьютера, скачок времени — предупреждение."; color: Theme.dim; font.pixelSize: 13; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                        Label { text: "Внутри ядра всегда UTC. Журнал пульта — по судовому времени с поясом в каждой строке (+3, +5:30). Время GNSS каждого приёмника сверяется с часами компьютера и с самим собой: скачок, замёрзшее время или увод — предупреждение TIME_JUMP."; color: Theme.dim; font.pixelSize: 13; wrapMode: Text.Wrap; Layout.fillWidth: true }
                         Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                         Label { text: "Судовой пояс"; color: Theme.dim; font.pixelSize: 14 }
                         Rectangle {

@@ -21,7 +21,7 @@ std::string HmiCore::localPath(const QString& p) {
 void HmiCore::say(const std::string& m) {
     const QString t = QString::fromStdString(m);
     for (const QString& line : t.split('\n', Qt::SkipEmptyParts))
-        log_.prepend(shipClock() + "  " + line);
+        log_.prepend(shipClock() + " " + QString::fromStdString(zoneText(core_.shipTime().zoneMin())).mid(3) + "  " + line);   // с поясом: после перевода часов порядок событий восстановим
     while (log_.size() > 300) log_.removeLast();
     emit logChanged();
 }

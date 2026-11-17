@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <ctime>
 #include <cstdlib>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -28,7 +29,8 @@ inline long long daysFromCivil(int y, int m, int d) {
 
 // «hhmmss[.ss]» и дата → секунды UTC от 1970 года; false — поля пусты или вне диапазона.
 inline bool nmeaUtc(const std::string& hms, int day, int month, int year, double& utc) {
-    if (hms.size() < 6 || day < 1 || day > 31 || month < 1 || month > 12 || year < 1980 || year > 2200) return false;
+    if (hms.size() < 6 || day < 1 || month < 1 || month > 12 || year < 1980 || year > 2200) return false;
+    if (day > daysFromCivil(month == 12 ? year + 1 : year, month == 12 ? 1 : month + 1, 1) - daysFromCivil(year, month, 1)) return false;   // 31.02 и т. п.
     for (int i = 0; i < 6; ++i) if (hms[i] < '0' || hms[i] > '9') return false;
     const int hh = (hms[0] - '0') * 10 + (hms[1] - '0'), mm = (hms[2] - '0') * 10 + (hms[3] - '0');
     const double ss = std::atof(hms.c_str() + 4);
@@ -81,13 +83,19 @@ public:
     double jumpHoldS = 60.0;     // предупреждение о скачке держится столько секунд
     double zoneHystDeg = 0.25;   // гистерезис границы пояса по долготе, °
 
-    // Время UTC от приёмника: utc — секунды от 1970, at — часы приёма (те же, что у update: монотонные или время имитатора).
-    void feedGnss(double utc, double at) {
-        if (hasG_) {
-            const double pred = gUtc_ + (at - gAt_);
-            if (std::fabs(utc - pred) > jumpS && at - gAt_ < 30.0) { jumpUntil_ = at + jumpHoldS; jumpBy_ = utc - pred; }
-        }
-        gUtc_ = utc; gAt_ = at; hasG_ = true;
+    // Время UTC от приёмника ch: utc — секунды от 1970, at — часы приёма (те же, что у update: монотонные или время имитатора).
+    // Скачок ищется у каждого приёмника отдельно (два приёмника с разным временем — не скачок) по смещению utc − at
+    // относительно его опорного: так ловится и скачок, и замёрзшее время, и увод. Одиночный выброс (пачка строк из буфера)
+    // не считается — нужны два приёма подряд вне допуска.
+    void feedGnss(double utc, double at, const std::string& ch = "") {
+        if (!std::isfinite(utc) || !std::isfinite(at)) return;
+        Rx& r = rx_[ch]; const double off = utc - at;
+        if (!r.has || at - r.at > 30.0) { r.ref = off; r.bad = 0; }
+        else if (std::fabs(off - r.ref) > jumpS) {
+            if (++r.bad >= 2) { jumpUntil_ = at + jumpHoldS; jumpBy_ = off - r.ref; jumpCh_ = ch; r.ref = off; r.bad = 0; }
+        } else { r.ref += 0.05 * (off - r.ref); r.bad = 0; }   // медленно следует за дрожанием приёма
+        r.at = at; r.has = true;
+        if (!hasG_ || at >= gAt_) { gUtc_ = utc; gAt_ = at; hasG_ = true; }
     }
 
     // now — те же часы, что в feedGnss; pcUtc — часы компьютера (UTC); lonValid/lonDeg — долгота судна; sim — работает имитатор.
@@ -106,11 +114,11 @@ public:
             }
         } else pcDiff_ = 0;
         if (!sim && now < jumpUntil_) {
-            char b[256]; std::snprintf(b, sizeof b, "Скачок времени GNSS на %.0f с — сбой приёмника или подмена сигнала; проверьте приёмник", jumpBy_);
+            char b[256]; std::snprintf(b, sizeof b, "Скачок времени GNSS%s%s на %.0f с — сбой приёмника или подмена сигнала; проверьте приёмник", jumpCh_.empty() ? "" : " ", jumpCh_.c_str(), jumpBy_);
             out.push_back({"TIME_JUMP", b, 2});
         }
         // пояс по долготе
-        if (lonValid) {
+        if (lonValid && std::isfinite(lonDeg)) {
             const int sug = suggestFrom(lonDeg);
             if (!zoneSet_) { zone_ = sug; zoneSet_ = true; ackSug_ = sug; char b[160]; std::snprintf(b, sizeof b, "Судовое время: %s (по долготе %.1f°)", zoneText(zone_).c_str(), lonDeg); infos.push_back(b); }
             sug_ = sug; sugValid_ = true;
@@ -157,14 +165,15 @@ private:
     Source src_ = Gnss;
     bool sim_ = false, hasG_ = false, usingGnss_ = false, zoneSet_ = false, sugValid_ = false, fallbackSaid_ = false;
     double gUtc_ = 0, gAt_ = -1e9, utc_ = 0, now_ = 0, pcDiff_ = 0, jumpUntil_ = -1e9, jumpBy_ = 0;
+    struct Rx { bool has = false; double at = -1e9, ref = 0; int bad = 0; };
+    std::map<std::string, Rx> rx_; std::string jumpCh_;
     int zone_ = pcZoneMin(), sug_ = 0, ackSug_ = 0;
 
     int suggestFrom(double lon) const {   // морской пояс: целые часы по 15° долготы, с гистерезисом у границы
-        while (lon > 180) lon -= 360;
-        while (lon < -180) lon += 360;
+        lon = std::remainder(lon, 360.0);   // −180…180 без цикла (вызывающий отбрасывает нечисловую долготу)
         if (sugValid_) {
             const double centre = sug_ / 60.0 * 15.0;
-            if (std::fabs(lon - centre) <= 7.5 + zoneHystDeg) return sug_;
+            if (std::fabs(std::remainder(lon - centre, 360.0)) <= 7.5 + zoneHystDeg) return sug_;   // и через ±180°
         }
         int h = static_cast<int>(std::lround(lon / 15.0)); if (h > 12) h = 12; if (h < -12) h = -12;
         return h * 60;

@@ -316,11 +316,12 @@ public:
         return fr;
     }
 
-    // Самое свежее время UTC от приёмников GNSS: false — ни одного не было.
-    bool latestUtc(double& utc, double& at) const {
-        std::lock_guard<std::mutex> lk(m_); bool any = false;
-        for (const auto& kv : ch_) if (kv.second.cfg.kind == ChannelKind::Gnss && kv.second.utcAt > -1e8 && (!any || kv.second.utcAt > at)) { utc = kv.second.utc; at = kv.second.utcAt; any = true; }
-        return any;
+    // Время UTC от каждого приёмника GNSS, от которого оно было: имя канала, время, когда принято.
+    struct UtcRx { std::string id; double utc, at; };
+    std::vector<UtcRx> gnssUtc() const {
+        std::lock_guard<std::mutex> lk(m_); std::vector<UtcRx> r;
+        for (const auto& kv : ch_) if (kv.second.cfg.kind == ChannelKind::Gnss && kv.second.utcAt > -1e8) r.push_back({kv.first, kv.second.utc, kv.second.utcAt});
+        return r;
     }
     bool toGeo(double n, double e, double& lat, double& lon) const { std::lock_guard<std::mutex> lk(m_); if (!frame_.valid()) return false; frame_.toGeo(n, e, lat, lon); return true; }
 
@@ -415,11 +416,11 @@ private:
         }
         if (s.type == "RMC" && s.f.size() >= 6) {
             if (s.f[1] != "A") return reject(c, "RMC: данные недостоверны");
-            if (s.f.size() >= 9 && s.f[8].size() == 6) {   // время (поле 1) и дата ддммгг (поле 9) — судовое время, если нет ZDA
+            if (!nmea::parseAngle(s.f[2], s.f[3], true, lat) || !nmea::parseAngle(s.f[4], s.f[5], false, lon)) return reject(c, "нет координат в RMC");
+            if (s.f.size() >= 9 && s.f[8].size() == 6 && s.f[8].find_first_not_of("0123456789") == std::string::npos) {   // время (поле 1) и дата ддммгг (поле 9) — судовое время, если нет ZDA
                 const std::string& d = s.f[8]; double u;
                 if (now - c.utcAt > 1.5 && nmeaUtc(s.f[0], std::atoi(d.substr(0, 2).c_str()), std::atoi(d.substr(2, 2).c_str()), 2000 + std::atoi(d.substr(4, 2).c_str()), u)) { c.utc = u; c.utcAt = now; }
             }
-            if (!nmea::parseAngle(s.f[2], s.f[3], true, lat) || !nmea::parseAngle(s.f[4], s.f[5], false, lon)) return reject(c, "нет координат в RMC");
             return setPosGeo(c, lat, lon, now);
         }
         if (s.type == "VTG" && s.f.size() >= 5) {   // курс и скорость над грунтом: только показ, в решение не входит (не свежий отсчёт позиции)
