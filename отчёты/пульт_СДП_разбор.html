@@ -1,0 +1,533 @@
+<title>Пульт СДП: взгляд оператора</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&display=swap">
+<style>
+/* Макет: страница-разбор; в центре — экран пульта 1920×1080 в SVG, под ним разметка дизайнера.
+   Одна тёмная гамма сознательно: как на мостике ночью. */
+:root{
+  --bg:#0f1418; --panel:#171e24; --panel2:#1e272f; --line:#2f3b46; --fg:#dfe6ec; --dim:#8a97a3;
+  --set:#5cc8ff;    /* заданное */
+  --act:#eef3f7;    /* факт */
+  --ok:#3fcf8e; --warn:#f2b33d; --alarm:#ff5a52; --info:#9fb4c8;
+  --wind:#b9a2ff; --cur:#4fd1c5;
+  --f-body:"IBM Plex Sans",system-ui,sans-serif;
+  --f-cond:"IBM Plex Sans Condensed","IBM Plex Sans",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.5}
+.wrap{max-width:1280px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:40px}
+h1,h2,h3{font-family:var(--f-cond);font-weight:600;text-wrap:balance;margin:0;letter-spacing:.01em}
+h1{font-size:34px;line-height:1.15}
+h2{font-size:24px}
+h3{font-size:17px}
+p{margin:0;max-width:72ch}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+header{display:grid;gap:12px}
+.lead{color:var(--dim);font-size:16px}
+section{display:grid;gap:16px;min-width:0}
+.scores{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.score{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:14px 16px;display:grid;gap:6px}
+.score .v{font-family:var(--f-mono);font-size:28px;font-variant-numeric:tabular-nums}
+.score .v small{font-size:15px;color:var(--dim)}
+.score .bar{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden}
+.score .bar i{display:block;height:100%}
+.score p{color:var(--dim);font-size:13.5px}
+.good{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:8px 24px;color:var(--fg)}
+.good li{margin:0}
+ul{margin:0;padding-left:20px;display:grid;gap:6px}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.tabs button,.toggle{font:500 14px var(--f-body);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:8px 14px;cursor:pointer}
+.tabs button[aria-pressed="true"]{background:var(--set);border-color:var(--set);color:#06141c}
+.tabs button:focus-visible,.toggle:focus-visible{outline:2px solid var(--set);outline-offset:2px}
+.toggle[aria-pressed="true"]{border-color:var(--warn);color:var(--warn)}
+.spacer{flex:1}
+.screen{overflow-x:auto;border:1px solid var(--line);border-radius:4px;background:#0b0f12}
+.screen svg{display:block;width:100%;min-width:960px;height:auto}
+.legend-notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px 28px}
+.note{display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:start}
+.note b.n{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--warn);color:#1a1205;font:700 13px var(--f-mono)}
+.note p{font-size:14px;color:var(--dim)} .note p strong{color:var(--fg);font-weight:600}
+.findings{display:grid;gap:10px}
+.f{display:grid;grid-template-columns:110px 1fr;gap:4px 16px;padding:12px 16px;background:var(--panel);border-radius:4px;border-left:4px solid var(--line)}
+.f.k{border-left-color:var(--alarm)} .f.v{border-left-color:var(--warn)} .f.u{border-left-color:var(--info)}
+.f .sev{font:600 12px var(--f-mono);letter-spacing:.06em;text-transform:uppercase}
+.f.k .sev{color:var(--alarm)} .f.v .sev{color:var(--warn)} .f.u .sev{color:var(--info)}
+.f .where{font:12px var(--f-mono);color:var(--dim)}
+.f h3{font-size:16px;font-family:var(--f-body);font-weight:600}
+.f .body{display:grid;gap:4px;min-width:0}
+.f .fix{color:var(--dim);font-size:14px}
+.f .fix::before{content:"Исправление: ";color:var(--ok);font-weight:600}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:600 12px var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+td code,td .m{font-family:var(--f-mono);color:var(--act)}
+.warn-note{color:var(--warn)}
+.done{border:1px solid var(--line);border-radius:4px;background:var(--panel);padding:20px;display:grid;gap:18px}
+.pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+figure{margin:0;display:grid;gap:6px;min-width:0}
+figure img{width:100%;border:1px solid var(--line);border-radius:3px;display:block}
+figcaption{font-size:13px;color:var(--dim)}
+figcaption b{color:var(--fg)}
+.check{display:grid;gap:8px}
+.ck{display:grid;grid-template-columns:120px 1fr;gap:4px 16px;padding:10px 0;border-top:1px solid var(--line)}
+.ck .st{font:600 12px var(--f-mono);letter-spacing:.06em;text-transform:uppercase}
+.ck .st.y{color:var(--ok)} .ck .st.p{color:var(--warn)} .ck .st.n{color:var(--info)}
+.ck p{font-size:14px} .ck p strong{color:var(--fg)}
+.ck .req{font-weight:600}
+@media (max-width:600px){.f{grid-template-columns:1fr}.ck{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+/* SVG */
+svg text{font-family:var(--f-body)}
+.halo{paint-order:stroke;stroke:#0b0f12;stroke-width:5px;stroke-linejoin:round}
+@keyframes blink{50%{opacity:.25}}
+.blink{animation:blink 1s steps(1) infinite}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Пульт оператора СДП · снимки от 16.11.2026 · разбор от 17.11.2026</div>
+  <h1>Пульт СДП: взгляд оператора и макет дизайнера</h1>
+  <p class="lead">Разобраны пять снимков пульта: норма, счисление курса, нет курса, счисление положения и возврат в точку. Ниже даны оценки, найденные недочёты и переработанный экран. На макете можно переключать те же пять ситуаций и включить разметку с пояснениями.</p>
+</header>
+
+<section aria-labelledby="s-done" class="done">
+  <div class="eyebrow">Сделано в коде · 17.11.2026 · ветка hmi-plan-view</div>
+  <h2 id="s-done">Первый шаг: план положения (плоттер)</h2>
+  <p class="lead">Переделан плоттер в коде пульта: <code>hmi/qml/PositionView.qml</code> и <code>hmi/qml/Theme.qml</code>. Регулятор, оценка положения и тревоги не затронуты, изменено только отображение. Коммит лежит в локальной ветке <code>hmi-plan-view</code> репозитория SDP-Core-cpp и в GitHub не отправлен. Сборка с пультом прошла, ctest: 36 из 36 тестов пройдены, включая проверки пульта.</p>
+
+  <div class="pair">
+    <figure><img src="img/do_1_norma.jpg" alt="Пульт до изменений, норма"><figcaption><b>До, норма.</b> Подписи «ветер» и «возмущение» лежат на кольцах. Курс цифрой на плане не показан. Легенда занимает угол.</figcaption></figure>
+    <figure><img src="img/posle_1_norma.jpg" alt="Пульт после изменений, норма"><figcaption><b>После, норма.</b> Курс 009,5° стоит в углу. Ветер дан в узлах и м/с, скорость в узлах. На плане остались только значки на ободе.</figcaption></figure>
+    <figure><img src="img/do_3_kurs_net.jpg" alt="Пульт до изменений, нет курса"><figcaption><b>До, нет курса.</b> Судно нарисовано полным контуром на старом курсе, как будто курс известен.</figcaption></figure>
+    <figure><img src="img/posle_3_lost.jpg" alt="Пульт после изменений, нет курса"><figcaption><b>После, нет курса.</b> Судно показано серым пунктиром, без курсовой черты и векторов упора. Окно курса красное «— — —», под судном подпись «курс неизвестен».</figcaption></figure>
+    <figure><img src="img/posle_4_posdr.jpg" alt="Пульт после изменений, счисление положения"><figcaption><b>После, счисление положения.</b> Судно янтарное, на плане подпись «положение по счислению». Источник курса в окне: «гиро».</figcaption></figure>
+    <figure><img src="img/posle_5_turn.jpg" alt="Пульт после изменений, разворот"><figcaption><b>После, разворот и сдвиг.</b> Видны оба значка, залитый (курс судна) и контурный (курс задания). Поворот −23,2 °/мин выделен янтарным.</figcaption></figure>
+  </div>
+  <p class="warn-note">⚠ Снимки «до» сделаны вами на более новой версии пульта, а «после» — на версии из папки sdpcore, она же в репозитории. Поэтому правая часть экрана на парах отличается. Сравнивать нужно только левую панель, сам план положения.</p>
+
+  <h3>Сверка с вашими условиями</h3>
+  <div class="check">
+    <div class="ck"><div class="st y">выполнено</div><div><p class="req">Посмотреть глазами оператора: удобство и информативность</p><p>Разобраны пять снимков: оценки по четырём критериям и 21 недочёт с исправлением (ниже на странице). Для плоттера всё нужное оператору собрано в четырёх окнах по углам: курс, ветер и возмущение, скорость и поворот, масштаб.</p></div></div>
+    <div class="ck"><div class="st y">выполнено</div><div><p class="req">Где огрехи — добавить вид дизайнера</p><p>Ниже на странице есть макет всего экрана в пяти ситуациях с разметкой из 12 пояснений. План положения из макета уже перенесён в код.</p></div></div>
+    <div class="ck"><div class="st y">выполнено</div><div><p class="req">Графика не должна перебивать отображение</p><p>Кольца и сетка приглушены. Подписи колец стоят на диагонали, которая сама выбирается подальше от курса, ветра и возмущения, и лежат на подложке. Под корпусом судна подписи не ставятся. У стрелок ветра и возмущения нет текста на плане, цифры вынесены в окна. Радиус картушки подбирается так, чтобы градусы не заходили под окна.</p></div></div>
+    <div class="ck"><div class="st y">выполнено</div><div><p class="req">Если что-то вращается — градусы</p><p>Курс трёхзначный (009,5°) с источником: гиро, СЧИСЛ. или НЕТ. Картушка размечена через 5°, подписи 030…330 и С/В/Ю/З. Курс судна и курс задания показаны значками на ободе. Ветер «откуда» и возмущение «куда» — целыми градусами (059°, 242°). Поворот дан в °/мин со знаком.</p></div></div>
+    <div class="ck"><div class="st y">выполнено</div><div><p class="req">Скорость в узлах</p><p>Скорость судна над грунтом идёт в узлах (0,07 уз). Ветер дан в узлах, вторым — в м/с: «26,8 уз (13,8 м/с)».</p></div></div>
+    <div class="ck"><div class="st p">частично</div><div><p class="req">Мили</p><p>На плоттере удержания расстояния остаются в метрах (кольца 12,5–250 м). Мили здесь были бы крупнее нужной точности. Мили нужны для перехода и маршрута, а таких режимов в пульте пока нет. Правило записано в таблицу единиц ниже.</p></div></div>
+    <div class="ck"><div class="st n">следующий шаг</div><div><p class="req">Остальной экран</p><p>Следующие шаги:</p><ul><li>плитки движителей: шкала 000–359°, задание и факт, обороты, кВт;</li><li>блок «Курс и скорость» в узлах;</li><li>датчики со значениями;</li><li>«Стоп имитатор» — в меню «Сервис».</li></ul><p>⚠ Течения, координат, оборотов и мощности по движителям ядро пульту не передаёт, поэтому сначала их нужно вывести из ядра в пульт (<code>hmicore</code>). Попутно замечено: надпись на кнопке «Держать здесь» почти не видна, тёмный текст на тёмном. Это Main.qml, в этот шаг не входило.</p></div></div>
+  </div>
+</section>
+
+<section aria-labelledby="s-score">
+  <h2 id="s-score">Оценка</h2>
+  <div class="scores" id="scores"></div>
+  <h3>Что уже сделано хорошо и что стоит сохранить</h3>
+  <ul class="good">
+    <li>Крупная плашка режима с цветом состояния видна издалека.</li>
+    <li>Блок «Что делать» с пронумерованными шагами в аварии.</li>
+    <li>Полоса обратного отсчёта до снятия упора при счислении курса.</li>
+    <li>Смена режима только повторным нажатием в течение 3 с.</li>
+    <li>Числа с запятой, по-русски; есть пары «задание / факт».</li>
+    <li>Тёмная гамма не слепит ночью.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="s-mock">
+  <h2 id="s-mock">Вид дизайнера: переработанный экран</h2>
+  <p class="lead">Правила макета: графика лежит нижним слоем и приглушена. Числа и подписи идут верхним слоем, на подложке, и не ставятся поверх линий. Направления на картушке показаны значками на ободе, а их значения выведены в углы панели.</p>
+  <div class="tabs" role="group" aria-label="Ситуация">
+    <span id="tabs" class="tabs"></span>
+    <span class="spacer"></span>
+    <button class="toggle" id="ann" aria-pressed="true">Разметка дизайнера</button>
+  </div>
+  <div class="screen"><svg id="scr" viewBox="0 0 1920 1080" role="img" aria-label="Макет экрана пульта СДП"></svg></div>
+  <div class="legend-notes" id="notes"></div>
+</section>
+
+<section aria-labelledby="s-find">
+  <h2 id="s-find">Огрехи по снимкам</h2>
+  <p class="lead">Номера экранов: 1 — норма, 2 — счисление курса, 3 — нет курса, 4 — счисление положения, 5 — возврат в точку. Красным отмечено то, что может ввести оператора в заблуждение в аварии.</p>
+  <div class="findings" id="findings"></div>
+</section>
+
+<section aria-labelledby="s-units">
+  <h2 id="s-units">Единицы и форматы на экране</h2>
+  <p class="lead">Правило простое: у каждого числа есть единица. Если величина вращается или задаёт направление, она показывается в градусах. Скорости судна, ветра и течения даются в узлах, а расстояния на удержании — в метрах.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Величина</th><th>Единица</th><th>Формат</th><th>Пример</th></tr></thead>
+    <tbody>
+      <tr><td>Курс, пеленг, направление</td><td>°</td><td>три цифры, 0,1°</td><td class="m">008,5°</td></tr>
+      <tr><td>Скорость поворота (ROT)</td><td>°/мин</td><td>со знаком; + вправо</td><td class="m">+4,3 °/мин</td></tr>
+      <tr><td>Скорость судна над грунтом</td><td>уз</td><td>0,01 уз до 1 уз, затем 0,1</td><td class="m">0,12 уз</td></tr>
+      <tr><td>Скорость вдоль / поперёк</td><td>уз</td><td>со знаком и стороной</td><td class="m">+0,05 уз вперёд · 0,02 уз к ЛБ</td></tr>
+      <tr><td>Отклонение, дистанции удержания</td><td>м</td><td>0,1 м</td><td class="m">8,2 м</td></tr>
+      <tr><td>Дистанции перехода, маршрут</td><td>мили</td><td>0,01 мили; меньше 0,1 мили — в метрах</td><td class="m">0,25 мили</td></tr>
+      <tr><td>Ветер</td><td>уз, вторым — м/с</td><td>«откуда», °</td><td class="m">065° · 19,8 уз (10,2 м/с)</td></tr>
+      <tr><td>Течение</td><td>уз</td><td>«куда», ° (так принято у течения; подписывать явно)</td><td class="m">229° · 0,6 уз</td></tr>
+      <tr><td>Угол поворотного движителя</td><td>°</td><td>000–359, 0° — упор к носу</td><td class="m">зад. 030° · факт 029°</td></tr>
+      <tr><td>Упор, шаг, обороты, мощность</td><td>кН · % · об/мин · кВт</td><td>целые</td><td class="m">26 кН · 15 % · 412 об/мин · 86 кВт</td></tr>
+      <tr><td>Крен / дифферент</td><td>°</td><td>со стороной: ЛБ/ПрБ, нос/корма</td><td class="m">1,9° ЛБ / 0,1° корма</td></tr>
+      <tr><td>Координаты</td><td>° ′</td><td>градусы, минуты до 0,001′</td><td class="m">59°56,123′ с.ш. 030°18,456′ в.д.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="warn-note">⚠ На макете есть поля, которых сейчас нет в данных ядра: скорость над грунтом, течение, обороты, мощность движителей, координаты, расхождение гирокомпасов и качество GNSS. Их нужно сначала вывести из ядра в пульт (<code>hmicore</code>), иначе на экране будут прочерки.</p>
+</section>
+
+<section aria-labelledby="s-code">
+  <h2 id="s-code">Куда это ложится в коде пульта</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Файл</th><th>Что менять</th></tr></thead>
+    <tbody>
+      <tr><td class="m">hmi/qml/PositionView.qml</td><td>Подписи колец на одном луче, свободном от курса и стрелок, с подложкой; ветер и течение значками на ободе, цифры в углах; окно курса в углу; при отсутствии курса судно серым пунктиром; убрать легенду в подсказку.</td></tr>
+      <tr><td class="m">hmi/qml/ThrusterTile.qml</td><td>Шкала угла с делениями через 30°; задание полым треугольником на ободе, факт стрелкой; горизонтальная полоса упора с нулём; обороты и кВт; плашка состояния без обрезки.</td></tr>
+      <tr><td class="m">hmi/qml/Main.qml</td><td>«Что делать» перенести к тревогам, блок «Точка и курс» не скрывать; «Судно…» и «Стоп имитатор» — в меню «Сервис»; блок курса и скорости в узлах; датчики со значениями.</td></tr>
+      <tr><td class="m">hmi/qml/Theme.qml</td><td>Развести цвета: <code>dist</code> сейчас почти совпадает с <code>warn</code>; течение — бирюзовый. Добавить сумеречную и ночную гамму.</td></tr>
+      <tr><td class="m">hmi/hmicore.cpp / .h</td><td>Новые поля: SOG, скорость вдоль/поперёк, течение, координаты, значения каждого датчика, обороты и мощность движителей, мощность по ГРЩ.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+</div>
+
+<script>
+(function(){
+const C={bg:'#0b0f12',panel:'#151c22',panel2:'#1c252d',line:'#2f3b46',fg:'#dfe6ec',dim:'#8a97a3',set:'#5cc8ff',act:'#eef3f7',ok:'#3fcf8e',warn:'#f2b33d',alarm:'#ff5a52',info:'#9fb4c8',wind:'#b9a2ff',cur:'#4fd1c5',grid:'#24303a'};
+const MONO="'IBM Plex Mono',ui-monospace,monospace", COND="'IBM Plex Sans Condensed','IBM Plex Sans',sans-serif";
+const KN=1.943844;
+const f=(v,d=1)=>{const s=Math.abs(v).toFixed(d).replace('.',',');return (v<0&&Number(s.replace(',','.'))!==0?'−':'')+s};
+const sg=(v,d=1)=>(v>0?'+':'')+f(v,d);
+const h3=v=>{const s=(((v%360)+360)%360).toFixed(1).replace('.',',');return s.padStart(5,'0')+'°'};
+const b3=v=>String(Math.round(((v%360)+360)%360)).padStart(3,'0')+'°';
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const rad=d=>d*Math.PI/180;
+
+/* ---------- ситуации ---------- */
+const base={hdg:8.5,set:8.4,rot:0.4,hdgSrc:'ok',dev:0.3,along:-0.3,ath:-0.2,sog:0.03,sAl:0.02,sAt:-0.01,
+  windMs:10.2,windFrom:65,curKn:0.6,curTo:229,dist:34,distFrom:49,wave:1.4,roll:-1.9,pitch:-0.1,depth:42,
+  posSrc:'GNSS1+GNSS2+LASER',posOk:true,unc:0,load:17,kw:119,bus:[61,58],
+  thr:[{id:'AZ1',type:'az',st:'ok',kn:26,set:15,act:14,aS:30,aA:29,rpm:412,kw:38},
+       {id:'AZ2',type:'az',st:'ok',kn:19,set:11,act:10,aS:41,aA:41,rpm:376,kw:31},
+       {id:'BOW1',type:'tun',st:'ok',kn:18,set:17,act:18,rpm:520,kw:26},
+       {id:'BOW2',type:'tun',st:'ok',kn:17,set:16,act:17,rpm:505,kw:24}],
+  alarms:[],todo:[],hold:false,ca:'Класс 2 · запас есть при наихудшем отказе (ГРЩ-1: 100 %, ГРЩ-2: 100 %)',
+  sens:{gyro:[8.5,8.4,8.6],gnss:['ok','ok'],laser:'ok'},spark:'flat',
+  banner:{t:'УДЕРЖАНИЕ ПОЗИЦИИ',s:'В режиме 00:42:17 · отклонение 0,3 м',c:'ok'},mode:'Позиция',dp:'DP-2'};
+const S=[
+ {k:'1',name:'1 · Норма',d:{}},
+ {k:'2',name:'2 · Счисление курса',d:{hdgSrc:'dr',rot:0,banner:{t:'СЧИСЛЕНИЕ КУРСА',s:'Нет гирокомпасов 1 с · упор будет снят через 0,9 с',c:'warn'},
+   sens:{gyro:[null,null,null],gnss:['ok','ok'],laser:'ok'},dev:0.2,along:0,ath:-0.2,load:19,kw:114,dp:'класс не задан',spark:'spike',
+   alarms:[{lv:'A',t:'22:57:45',code:'HDG_DR',txt:['Потеря курса: нет данных гирокомпасов 1 с,','курс по счислению до снятия упора']}],
+   todo:['Курс держится по счислению; через 0,9 с упор будет снят.','Готовьтесь взять управление вручную.','Проверьте гирокомпасы: питание, связь.'],cd:0.45}},
+ {k:'3',name:'3 · Нет курса',d:{hdgSrc:'lost',rot:-5.6,banner:{t:'УПОР СНЯТ: НЕТ КУРСА',s:'Гирокомпасов нет 8 с · автоматика не держит судно',c:'alarm'},
+   sens:{gyro:[null,null,null],gnss:['ok','ok'],laser:'ok'},dev:0.4,along:-0.2,ath:-0.4,sog:0.08,sAl:-0.03,sAt:-0.07,load:0,kw:1,bus:[1,0],dp:'класс не задан',spark:'drop',
+   thr:base.thr.map(t=>Object.assign({},t,{st:'off',kn:1,set:0,act:1,rpm:0,kw:0})),
+   alarms:[{lv:'A',t:'22:57:47',code:'HDG_LOST',txt:['Потеря курса: нет данных гирокомпасов,','счисление закончилось, упор снят']}],
+   todo:['Возьмите управление: джойстик или посты движителей.','Проверьте гирокомпасы: питание, связь.','Когда курс вернётся, удержание продолжится само.']}},
+ {k:'4',name:'4 · Счисление положения',d:{hdg:8.4,rot:0.3,dev:0,along:0,ath:0,posOk:false,unc:9,posSrc:'по модели (счисление)',load:16,kw:96,bus:[50,46],dp:'класс не задан',
+   banner:{t:'СЧИСЛЕНИЕ ПОЛОЖЕНИЯ',s:'Нет систем положения 4:00 · вероятный уход до 9 м',c:'warn'},
+   sens:{gyro:[8.4,8.4,8.5],gnss:[null,null],laser:null},hold:true,
+   alarms:[{lv:'A',t:'22:57:49',code:'POS_DROPOUT',txt:['Потеря положения: нет измерений 240 с,','удержание по модели, уход до 9 м (оценка)']}],
+   todo:['Судно держится по модели; точность падает с каждой минутой.','Проверьте GNSS и лазер. Готовьтесь к ручному управлению.','Когда положение вернётся, судно плавно пойдёт в точку.']}},
+ {k:'5',name:'5 · Возврат в точку',d:{hdg:7.9,rot:-1.3,dev:8.2,along:4.1,ath:7.1,sog:0.49,sAl:-0.24,sAt:-0.42,load:100,kw:977,bus:[490,487],dp:'класс не задан',
+   banner:{t:'ВОЗВРАТ В ТОЧКУ',s:'До точки 8,2 м · 0,49 уз · около 35 с',c:'set'},windMs:10,windFrom:58,dist:48,distFrom:12,spark:'rise',hold:true,
+   thr:[{id:'AZ1',type:'az',st:'ok',kn:-84,set:95,act:56,aS:309,aA:308,rpm:880,kw:310},
+        {id:'AZ2',type:'az',st:'ok',kn:113,set:100,act:63,aS:320,aA:319,rpm:910,kw:340},
+        {id:'BOW1',type:'tun',st:'ok',kn:-33,set:-33,act:-33,rpm:610,kw:150},
+        {id:'BOW2',type:'tun',st:'ok',kn:75,set:100,act:75,rpm:780,kw:177}],
+   alarms:[{lv:'W',t:'22:52:10',code:'POS_RETURN',txt:['Возврат в заданную точку после потери положения:','осталось 8,2 м']},
+           {lv:'I',t:'22:52:10',code:'AZ_TURNING',txt:['Колонки разворачиваются: упор временно','набирается не полностью']}],
+   todo:['Судно идёт в заданную точку со скоростью до 0,25 м/с.','Остаться здесь: нажмите «Держать здесь».']}}
+];
+const sc=i=>Object.assign({},base,S[i].d);
+
+/* ---------- примитивы ---------- */
+let o='';
+const T=(x,y,s,a={})=>{o+=`<text x="${x}" y="${y}" font-size="${a.fs||16}" fill="${a.c||C.fg}" ${a.anchor?`text-anchor="${a.anchor}"`:''} ${a.w?`font-weight="${a.w}"`:''} font-family="${a.mono?MONO:a.cond?COND:"'IBM Plex Sans',sans-serif"}" ${a.ls?`letter-spacing="${a.ls}"`:''} ${a.halo?'class="halo"':''} ${a.cls?`class="${a.cls}"`:''}>${esc(s)}</text>`};
+const R=(x,y,w,h,a={})=>{o+=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${a.rx??4}" fill="${a.fill||C.panel}" ${a.stroke?`stroke="${a.stroke}" stroke-width="${a.sw||1}"`:''} ${a.dash?`stroke-dasharray="${a.dash}"`:''} ${a.cls?`class="${a.cls}"`:''}/>`};
+const L=(x1,y1,x2,y2,c,w=1,dash)=>{o+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="${w}" ${dash?`stroke-dasharray="${dash}"`:''} stroke-linecap="round"/>`};
+const Ci=(x,y,r,a={})=>{o+=`<circle cx="${x}" cy="${y}" r="${r}" fill="${a.fill||'none'}" ${a.stroke?`stroke="${a.stroke}" stroke-width="${a.sw||1}"`:''} ${a.dash?`stroke-dasharray="${a.dash}"`:''}/>`};
+const P=(pts,a={})=>{o+=`<polygon points="${pts.map(p=>p.map(v=>v.toFixed(1)).join(',')).join(' ')}" fill="${a.fill||'none'}" ${a.stroke?`stroke="${a.stroke}" stroke-width="${a.sw||1}"`:''} ${a.dash?`stroke-dasharray="${a.dash}"`:''} ${a.op?`fill-opacity="${a.op}"`:''}/>`};
+const title=(x,y,s)=>T(x,y,s,{fs:14,c:C.dim,w:600,ls:'1.6',cond:true});
+const pill=(x,y,s,c,right)=>{const w=s.length*8.2+18;const X=right?x-w:x;R(X,y,w,24,{fill:c==='dim'?C.panel2:c,rx:3,stroke:c==='dim'?C.line:null});T(X+w/2,y+17,s,{fs:13,w:600,anchor:'middle',c:c==='dim'?C.dim:'#0b1116',cond:true})};
+const pol=(cx,cy,r,b)=>[cx+r*Math.sin(rad(b)),cy-r*Math.cos(rad(b))];
+const colOf=c=>({ok:C.ok,warn:C.warn,alarm:C.alarm,set:C.set})[c];
+const sevIcon=(x,y,lv,s=11)=>{ // форма + буква
+  if(lv==='A'){P([[x,y-s],[x+s,y+s*.8],[x-s,y+s*.8]],{fill:C.alarm});T(x,y+s*.6,'A',{fs:11,w:700,anchor:'middle',c:'#1a0605',mono:true})}
+  else if(lv==='W'){P([[x,y-s],[x+s,y],[x,y+s],[x-s,y]],{fill:C.warn});T(x,y+4,'W',{fs:10,w:700,anchor:'middle',c:'#1a1205',mono:true})}
+  else {Ci(x,y,s-1,{fill:C.info});T(x,y+4,'I',{fs:11,w:700,anchor:'middle',c:'#0b1116',mono:true})}
+};
+
+/* ---------- части экрана ---------- */
+function top(d){
+  const bc=colOf(d.banner.c);
+  R(12,10,440,82,{fill:C.panel,stroke:bc,sw:2});
+  T(30,50,d.banner.t,{fs:30,w:700,c:bc,cond:true,ls:'1'});
+  T(30,77,d.banner.s,{fs:15,c:C.fg});
+  R(464,10,280,82);
+  T(480,40,'Демонстрационное судно',{fs:17,w:600});
+  pill(480,56,d.dp,d.dp==='DP-2'?C.ok:'dim');pill(480+d.dp.length*8.2+28,56,'ИМИТАЦИЯ ×1',C.warn);
+  R(756,10,684,82);
+  if(d.alarms.length){const a=d.alarms[0];sevIcon(780,40,a.lv);T(800,45,a.t,{fs:14,c:C.dim,mono:true});T(880,45,a.code,{fs:16,w:700,c:a.lv==='A'?C.alarm:a.lv==='W'?C.warn:C.info,mono:true});T(800,72,a.txt.join(' '),{fs:14});
+    if(d.alarms.length>1)T(1424,45,'+'+(d.alarms.length-1)+' ещё',{fs:13,c:C.dim,anchor:'end'});}
+  else {T(780,58,'✓ Активных тревог нет',{fs:17,c:C.ok})}
+  const un=d.alarms.length;
+  R(1452,10,140,82,{fill:un?'#3a1c1b':C.panel2,stroke:un?C.alarm:C.line,sw:un?2:1});
+  T(1522,46,'Квитировать',{fs:17,w:600,anchor:'middle'});T(1522,72,un?`не квит.: ${un}`:'нечего',{fs:13,c:un?C.alarm:C.dim,anchor:'middle'});
+  R(1604,10,170,82);T(1689,52,d.k==='5'?'22:52:11':'22:57:45',{fs:30,mono:true,anchor:'middle'});T(1689,78,'16.11.2026 · UTC+3',{fs:12.5,c:C.dim,anchor:'middle'});
+  R(1786,10,122,82,{fill:C.panel2,stroke:C.line});T(1847,48,'☰ Сервис',{fs:16,anchor:'middle'});T(1847,72,'судно, имитатор',{fs:11.5,c:C.dim,anchor:'middle'});
+}
+
+function plot(d){
+  R(12,104,600,700);
+  const cx=312,cy=468,Rr=232,rng=100,k=Rr/rng;
+  // нижний слой: кольца, сетка
+  [25,50,75,100].forEach(m=>Ci(cx,cy,m*k,{stroke:C.grid,sw:m===100?2:1}));
+  L(cx-Rr,cy,cx+Rr,cy,C.grid);L(cx,cy-Rr,cx,cy+Rr,C.grid);
+  for(let b=0;b<360;b+=5){const L1=b%30===0?14:b%10===0?9:5;const[a1,a2]=pol(cx,cy,Rr,b),[b1,b2]=pol(cx,cy,Rr-L1,b);L(a1,a2,b1,b2,b%30===0?C.dim:C.line,b%30===0?2:1)}
+  for(let b=0;b<360;b+=30){const[x,y]=pol(cx,cy,Rr+22,b);const lab=b===0?'С':b===90?'В':b===180?'Ю':b===270?'З':String(b).padStart(3,'0');T(x,y+6,lab,{fs:b%90===0?19:14,w:b%90===0?700:400,anchor:'middle',c:b%90===0?C.fg:C.dim,mono:b%90!==0})}
+  // подписи колец — на одном луче 225°
+  const angd=(a,b)=>Math.abs(((a-b+540)%360)-180);
+  const ray=[45,135,225,315].map(b=>[b,Math.min(angd(b,d.hdg),angd(b,d.hdg+180),angd(b,d.windFrom),angd(b,d.curTo))]).sort((a,b)=>b[1]-a[1])[0][0];
+  [25,50,75,100].forEach(m=>{const[x,y]=pol(cx,cy,m*k,ray);T(x+6,y-5,m+' м',{fs:13,c:C.dim,halo:true,mono:true})});
+  // судно
+  const hdgKnown=d.hdgSrc!=='lost';
+  const Lp=60,B=14,sN=d.along*Math.cos(rad(d.hdg))-d.ath*Math.sin(rad(d.hdg)),sE=d.along*Math.sin(rad(d.hdg))+d.ath*Math.cos(rad(d.hdg));
+  const loc=[[0,Lp/2],[B/2,Lp/2-14],[B/2,-Lp/2],[-B/2,-Lp/2],[-B/2,Lp/2-14]];
+  const tr=([x,y])=>{const h=rad(d.hdg);const E=x*Math.cos(h)+y*Math.sin(h)+sE,N=-x*Math.sin(h)+y*Math.cos(h)+sN;return[cx+E*k,cy-N*k]};
+  const shipC=d.hdgSrc==='lost'?C.dim:d.hdgSrc==='dr'||!d.posOk?C.warn:C.act;
+  if(d.unc){Ci(cx+sE*k,cy-sN*k,d.unc*k,{stroke:C.warn,sw:2,dash:'6 5',fill:'rgba(242,179,61,.08)'})}
+  // линия курса — до кольца, под подписями
+  if(hdgKnown){const[bx,by]=tr([0,Lp/2]);const[ex,ey]=pol(cx,cy,Rr-16,d.hdg);L(bx,by,ex,ey,shipC,1.5,'6 6')}
+  P(loc.map(tr),{fill:shipC,op:hdgKnown?.12:.05,stroke:shipC,sw:2,dash:hdgKnown?null:'7 6'});
+  // движители: факт упора — короткие отрезки
+  const tp={AZ1:[-4,-24],AZ2:[4,-24],BOW1:[0,22],BOW2:[0,16]};
+  d.thr.forEach(t=>{const[x,y]=tr(tp[t.id]);Ci(x,y,3.5,{fill:t.st==='ok'?C.ok:C.dim});if(t.st==='ok'&&Math.abs(t.act)>2){const a=t.type==='az'?t.aA:(t.act>0?90:270);const len=6+Math.abs(t.act)*.25;const[ex,ey]=pol(x,y,len,a+d.hdg+180);L(x,y,ex,ey,C.ok,2)}});
+  // заданная точка (поверх судна)
+  L(cx-12,cy,cx+12,cy,C.set,2.5);L(cx,cy-12,cx,cy+12,C.set,2.5);Ci(cx,cy,6,{stroke:C.set,sw:2});
+  // маркеры на ободе: задан. курс, факт курса, ветер, течение
+  const tri=(b,c,fill,inward=true,sz=11)=>{const tip=pol(cx,cy,Rr-(inward?2:-2),b),l=pol(cx,cy,Rr+(inward?sz*1.5:-sz*1.5),b-3.2),r=pol(cx,cy,Rr+(inward?sz*1.5:-sz*1.5),b+3.2);P([tip,l,r],{fill:fill?c:C.panel,stroke:c,sw:2})};
+  tri(d.set,C.set,false);
+  if(hdgKnown)tri(d.hdg,shipC,true,false);
+  // ветер (откуда): стрелка снаружи в сторону центра
+  {const a=pol(cx,cy,Rr-4,d.windFrom),b=pol(cx,cy,Rr-34,d.windFrom);L(a[0],a[1],b[0],b[1],C.wind,3);const h1=pol(b[0],b[1],9,d.windFrom+150),h2=pol(b[0],b[1],9,d.windFrom-150);P([b,h1,h2],{fill:C.wind})}
+  // течение (куда): ромб на ободе
+  {const[x,y]=pol(cx,cy,Rr-12,d.curTo);P([[x,y-8],[x+8,y],[x,y+8],[x-8,y]],{fill:C.cur})}
+  // окно курса — угол панели
+  const hc=d.hdgSrc==='ok'?C.act:d.hdgSrc==='dr'?C.warn:C.alarm;
+  R(24,116,176,82,{fill:C.panel2,stroke:d.hdgSrc==='ok'?C.line:hc,sw:d.hdgSrc==='ok'?1:2});
+  T(36,138,'КУРС',{fs:12,c:C.dim,w:600,ls:'1.5',cond:true});T(188,138,d.hdgSrc==='ok'?'гиро':d.hdgSrc==='dr'?'СЧИСЛ.':'НЕТ',{fs:12,c:hc,w:700,anchor:'end',cond:true});
+  T(36,180,hdgKnown?h3(d.hdg):'— — —',{fs:34,mono:true,w:500,c:hc,cls:d.hdgSrc==='dr'?'blink':''});
+  // ветер / течение — угол панели справа
+  R(424,116,176,82,{fill:C.panel2,stroke:C.line});
+  {const a=[440,140];L(a[0],a[1]-6,a[0]+14,a[1]-6,C.wind,3);T(462,140,'Ветер '+b3(d.windFrom),{fs:13.5,c:C.wind});T(588,162,f(d.windMs*KN)+' уз',{fs:17,mono:true,anchor:'end'});
+   P([[447,180],[453,186],[447,192],[441,186]],{fill:C.cur});T(462,191,'Течение → '+b3(d.curTo)+'  '+f(d.curKn)+' уз',{fs:13.5,c:C.cur})}
+  // скорость и ROT — левый нижний угол
+  R(24,700,176,92,{fill:C.panel2,stroke:C.line});
+  T(36,722,'СКОРОСТЬ',{fs:12,c:C.dim,w:600,ls:'1.2',cond:true});
+  T(36,752,f(d.sog,2)+' уз',{fs:22,mono:true});T(36,780,sg(d.rot)+' °/мин',{fs:16,mono:true,c:Math.abs(d.rot)>3?C.warn:C.fg});
+  // масштаб — правый нижний
+  R(424,700,176,92,{fill:C.panel2,stroke:C.line});T(436,722,'МАСШТАБ',{fs:12,c:C.dim,w:600,ls:'1.2',cond:true});
+  [['25',436],['50',476],['100',516],['250',560]].forEach(([s,x])=>{const on=s==='100';R(x-4,734,s.length*10+18,26,{fill:on?C.set:C.panel,rx:3,stroke:on?null:C.line});T(x+5+s.length*5,752,s,{fs:14,anchor:'middle',c:on?'#06141c':C.fg,mono:true})});
+  T(436,782,'кольца по 25 м · север вверх',{fs:12,c:C.dim});
+  if(d.unc){const[x,y]=[cx,cy+186];T(x,y,'вероятный уход ±'+d.unc+' м',{fs:14,c:C.warn,anchor:'middle',halo:true,w:600})}
+  if(!hdgKnown)T(cx,cy+186,'курс неизвестен',{fs:15,c:C.alarm,anchor:'middle',halo:true,w:600});
+}
+
+function heading(d){
+  const x=624,y=104,w=540,h=236;R(x,y,w,h);title(x+16,y+28,'КУРС И СКОРОСТЬ');
+  const src=d.hdgSrc==='ok'?['по гирокомпасам',C.ok]:d.hdgSrc==='dr'?['ПО СЧИСЛЕНИЮ',C.warn]:['НЕТ ДАННЫХ',C.alarm];pill(x+w-16,y+12,src[0],src[1],true);
+  const hc=d.hdgSrc==='ok'?C.act:d.hdgSrc==='dr'?C.warn:C.alarm;
+  T(x+16,y+104,d.hdgSrc==='lost'?'НЕТ':h3(d.hdg),{fs:60,mono:true,c:hc,w:500});T(x+18,y+128,'факт',{fs:13,c:C.dim});
+  T(x+300,y+66,'задан',{fs:13,c:C.dim});T(x+520,y+66,h3(d.set),{fs:22,mono:true,c:C.set,anchor:'end'});
+  T(x+300,y+96,'ошибка',{fs:13,c:C.dim});T(x+520,y+96,d.hdgSrc==='lost'?'—':sg(d.hdg-d.set)+'°',{fs:22,mono:true,anchor:'end'});
+  T(x+300,y+124,'поворот',{fs:13,c:C.dim});T(x+520,y+124,sg(d.rot)+' °/мин',{fs:18,mono:true,anchor:'end',c:Math.abs(d.rot)>3?C.warn:C.fg});
+  // шкала ROT −10…+10
+  const bx=x+300,bw=220,by=y+134;R(bx,by,bw,8,{fill:C.panel2,rx:2});L(bx+bw/2,by-3,bx+bw/2,by+11,C.dim,1.5);
+  const rp=Math.max(-10,Math.min(10,d.rot));const mx=bx+bw/2+rp/10*bw/2;R(Math.min(mx,bx+bw/2),by,Math.abs(mx-bx-bw/2),8,{fill:Math.abs(d.rot)>3?C.warn:C.set,rx:1});
+  T(bx,by+24,'ЛБ 10',{fs:11,c:C.dim,mono:true});T(bx+bw,by+24,'10 ПрБ',{fs:11,c:C.dim,mono:true,anchor:'end'});
+  L(x+16,y+172,x+w-16,y+172,C.line);
+  if(d.cd!==undefined){R(x+16,y+184,w-32,8,{fill:C.panel2,rx:2});R(x+16,y+184,(w-32)*d.cd,8,{fill:C.warn,rx:2});T(x+16,y+216,'Упор будет снят через 0,9 с, если гирокомпасы не вернутся',{fs:14,c:C.warn})}
+  else{T(x+16,y+198,'над грунтом',{fs:13,c:C.dim});T(x+16,y+222,f(d.sog,2)+' уз',{fs:20,mono:true});
+    T(x+180,y+198,'вдоль',{fs:13,c:C.dim});T(x+180,y+222,sg(d.sAl,2)+' уз '+(d.sAl>=0?'вперёд':'назад'),{fs:16,mono:true});
+    T(x+370,y+198,'поперёк',{fs:13,c:C.dim});T(x+370,y+222,f(Math.abs(d.sAt),2)+' уз '+(d.sAt>=0?'к ПрБ':'к ЛБ'),{fs:16,mono:true});}
+}
+
+function deviation(d){
+  const x=624,y=350,w=540,h=212;R(x,y,w,h);title(x+16,y+28,'ОТКЛОНЕНИЕ ОТ ЗАДАННОЙ ТОЧКИ');
+  if(d.posOk){T(x+16,y+90,f(d.dev)+' м',{fs:52,mono:true,w:500,c:d.dev>5?C.warn:C.act});
+    T(x+16,y+120,'вдоль '+f(Math.abs(d.along))+' м '+(d.along>=0?'к носу':'к корме')+' · поперёк '+f(Math.abs(d.ath))+' м '+(d.ath>=0?'к ПрБ':'к ЛБ'),{fs:14.5})}
+  else{T(x+16,y+78,'НЕ ИЗМЕРЯЕТСЯ',{fs:30,w:700,c:C.warn,cond:true});T(x+16,y+108,'оценка по модели 0,0 м · уход до ±'+d.unc+' м',{fs:16,c:C.warn,mono:true});T(x+16,y+128,'измерений нет 4:00',{fs:14,c:C.warn})}
+  T(x+16,y+160,'59°56,123′ с.ш.  030°18,456′ в.д.',{fs:14.5,mono:true,c:d.posOk?C.fg:C.dim});
+  T(x+16,y+190,'Источник: '+d.posSrc,{fs:13.5,c:d.posOk?C.dim:C.warn});
+  // мишень, нос вверх, 5 м
+  const bx=x+448,by=y+118,br=72,sc=br/5;
+  [1,3,5].forEach(m=>Ci(bx,by,m*sc,{stroke:C.grid,sw:m===5?2:1}));L(bx-br,by,bx+br,by,C.grid);L(bx,by-br,bx,by+br,C.grid);
+  T(bx,by-br-8,'нос ▲',{fs:12,c:C.dim,anchor:'middle'});
+  [1,3,5].forEach(m=>{const[px,py]=pol(bx,by,m*sc,135);T(px+3,py+12,m+(m===5?' м':''),{fs:11.5,c:C.dim,halo:true,mono:true})});
+  if(!d.posOk){Ci(bx,by,br,{stroke:C.warn,sw:2,dash:'5 4',fill:'rgba(242,179,61,.10)'});}
+  else if(d.dev<=5){Ci(bx+d.ath*sc,by-d.along*sc,6,{fill:C.act})}
+  else{const a=Math.atan2(d.ath,d.along)*180/Math.PI;const[px,py]=pol(bx,by,br,a),[qx,qy]=pol(bx,by,br-16,a);L(qx,qy,px,py,C.warn,3);const h1=pol(px,py,9,a+150),h2=pol(px,py,9,a-150);P([[px,py],h1,h2],{fill:C.warn});T(bx,by+br+18,'за шкалой: '+f(d.dev)+' м',{fs:13,c:C.warn,anchor:'middle',w:600})}
+}
+
+function mode(d){
+  const x=624,y=572,w=540,h=232;R(x,y,w,h);title(x+16,y+28,'РЕЖИМ');T(x+w-16,y+28,'смена: повторное нажатие за 3 с',{fs:12.5,c:C.dim,anchor:'end'});
+  ['Ожидание','Курс','Позиция'].forEach((m,i)=>{const bx=x+16+i*172,on=m===d.mode;R(bx,y+42,164,50,{fill:on?C.ok:C.panel2,stroke:on?null:C.line,rx:3});T(bx+82,y+66,m,{fs:17,w:on?700:500,anchor:'middle',c:on?'#061a10':C.fg});T(bx+82,y+84,on?'● работает':'',{fs:11.5,anchor:'middle',c:'#061a10',w:600})});
+  T(x+16,y+124,'Движители в управлении: ',{fs:15});T(x+212,y+124,d.thr.filter(t=>t.st==='ok').length+' из 4',{fs:15,w:700,c:d.thr.some(t=>t.st!=='ok')?C.alarm:C.ok});
+  R(x+330,y+104,94,30,{fill:C.panel2,stroke:C.line,rx:3});T(x+377,y+124,'Взять все',{fs:14,anchor:'middle'});
+  R(x+430,y+104,94,30,{fill:C.panel2,stroke:C.line,rx:3});T(x+477,y+124,'Снять все',{fs:14,anchor:'middle'});
+  L(x+16,y+146,x+w-16,y+146,C.line);
+  T(x+16,y+170,'ТОЧКА И КУРС',{fs:12.5,c:C.dim,w:600,ls:'1.4',cond:true});T(x+150,y+170,'шаг 1 м · 1°',{fs:12.5,c:C.dim});
+  [['С',0],['Ю',1],['З',2],['В',3]].forEach(([s,i])=>{R(x+16+i*48,y+180,42,38,{fill:C.panel2,stroke:C.line,rx:3});T(x+37+i*48,y+205,s,{fs:15,anchor:'middle',w:600})});
+  [['Курс −1°',212],['Курс +1°',312],['Точка = здесь',412]].forEach(([s,bx])=>{R(x+bx,y+180,s.length>9?112:94,38,{fill:C.panel2,stroke:C.line,rx:3});T(x+bx+(s.length>9?56:47),y+205,s,{fs:14,anchor:'middle'})});
+}
+
+function alarms(d){
+  const x=1176,y=104,w=732,h=262;R(x,y,w,h,{stroke:d.alarms.some(a=>a.lv==='A')?C.alarm:null,sw:2});
+  title(x+16,y+28,'ТРЕВОГИ ('+d.alarms.length+')');T(x+w-16,y+28,'значок: ▲ авария · ◆ предупреждение · ● сообщение',{fs:12,c:C.dim,anchor:'end'});
+  let yy=y+50;
+  if(!d.alarms.length){T(x+w/2,y+140,'Тревог нет',{fs:18,c:C.ok,anchor:'middle'});return}
+  d.alarms.forEach(a=>{const c=a.lv==='A'?C.alarm:a.lv==='W'?C.warn:C.info;R(x+12,yy,w-24,52,{fill:C.panel2,stroke:c,rx:3});sevIcon(x+32,yy+26,a.lv);T(x+52,yy+21,a.t,{fs:13,mono:true,c:C.dim});T(x+128,yy+21,a.code,{fs:14.5,mono:true,w:700,c});T(x+52,yy+42,a.txt.join(' '),{fs:14});yy+=58});
+  if(d.todo.length){T(x+16,yy+18,'ЧТО ДЕЛАТЬ',{fs:13,w:700,ls:'1.4',c:C.warn,cond:true});yy+=22;
+    d.todo.forEach((s,i)=>{T(x+16,yy+18,String(i+1),{fs:14,w:700,c:C.warn,mono:true});T(x+36,yy+18,s,{fs:14});yy+=22})}
+  if(d.hold){R(x+w-292,y+h-50,276,38,{fill:C.warn,rx:3});T(x+w-154,y+h-25,'Держать здесь (не в точку)',{fs:15,w:700,anchor:'middle',c:'#1a1205'})}
+}
+
+function sensors(d){
+  const x=1176,y=376,w=732,h=214;R(x,y,w,h);title(x+16,y+28,'ДАТЧИКИ И СИСТЕМЫ ПОЛОЖЕНИЯ');
+  const med=d.sens.gyro.filter(v=>v!=null).sort((a,b)=>a-b)[1]??null;
+  const g=i=>{const v=d.sens.gyro[i];return v==null?null:[h3(v),'Δ '+sg(v-(med??v))+'°']};
+  const gn=i=>d.sens.gnss[i]?['DGPS · 14 сп.','HDOP 0,8']:null;
+  const rows=[['GYRO1',g(0)],['GYRO2',g(1)],['GYRO3',g(2)],['MRU1',['крен '+f(Math.abs(d.roll))+'° '+(d.roll<0?'ЛБ':'ПрБ'),'']],['MRU2',['крен '+f(Math.abs(d.roll-0.1))+'° '+(d.roll<0?'ЛБ':'ПрБ'),'']],
+              ['GNSS1',gn(0)],['GNSS2',gn(1)],['LASER',d.sens.laser?['142,3 м / 216°','отраж. 2']:null],['WIND1',[b3(d.windFrom)+' · '+f(d.windMs*KN)+' уз','']],['WIND2',[b3(d.windFrom+2)+' · '+f(d.windMs*KN-0.4)+' уз','']]];
+  rows.forEach((r,i)=>{const col=i<5?0:1,row=i%5,X=x+16+col*362,Y=y+60+row*30;const okk=r[1]!=null;
+    Ci(X+6,Y-5,5,{fill:okk?C.ok:C.alarm});T(X+20,Y,r[0],{fs:14.5,w:700,mono:true});
+    if(okk){T(X+90,Y,r[1][0],{fs:14.5,mono:true});T(X+340,Y,r[1][1],{fs:13,mono:true,c:C.dim,anchor:'end'})}
+    else{T(X+90,Y,'НЕТ ДАННЫХ',{fs:14,w:700,c:C.alarm});T(X+340,Y,d.k==='4'?'240 с':d.k==='3'?'10 с':'3 с',{fs:13,mono:true,c:C.alarm,anchor:'end'})}
+  });
+  T(x+16,y+h-12,'Δ — расхождение с медианой трёх гирокомпасов; возраст данных показан только когда связь пропала',{fs:12,c:C.dim});
+}
+
+function env(d){
+  const x=1176,y=600,w=732,h=204;R(x,y,w,h);title(x+16,y+28,'СРЕДА');
+  const rows=[['Ветер, откуда',b3(d.windFrom)+' · '+f(d.windMs*KN)+' уз ('+f(d.windMs)+' м/с)',C.wind],['Ветер от носа',Math.abs(((d.windFrom-d.hdg+540)%360)-180).toFixed(0)+'° '+(((d.windFrom-d.hdg+360)%360)<180?'ПрБ':'ЛБ'),C.fg],
+    ['Течение, куда (оценка)',b3(d.curTo)+' · '+f(d.curKn)+' уз',C.cur],['Возмущение, откуда',b3(d.distFrom)+' · '+d.dist+' кН',C.fg],['Волнение · глубина',f(d.wave)+' м · '+d.depth+' м',C.fg],['Крен / дифферент',f(Math.abs(d.roll))+'° '+(d.roll<0?'ЛБ':'ПрБ')+' / '+f(Math.abs(d.pitch))+'° '+(d.pitch<0?'корма':'нос'),C.fg]];
+  rows.forEach((r,i)=>{const Y=y+56+i*24;T(x+16,Y,r[0],{fs:14,c:C.dim});T(x+440,Y,r[1],{fs:14.5,mono:true,anchor:'end',c:r[2]})});
+  L(x+460,y+40,x+460,y+h-14,C.line);
+  T(x+478,y+28,'АНАЛИЗ ОТКАЗА',{fs:14,c:C.dim,w:600,ls:'1.6',cond:true});
+  const on=d.dp==='DP-2';pill(x+478,y+44,on?'КЛАСС 2 · ВКЛ':'ВЫКЛЮЧЕН',on?C.ok:'dim');
+  if(on){T(x+478,y+96,'Запас упора при наихудшем отказе',{fs:13,c:C.dim});
+    [['ГРЩ-1',100],['ГРЩ-2',100]].forEach(([n,v],i)=>{const Y=y+118+i*34;T(x+478,Y+4,n,{fs:13.5,mono:true});R(x+540,Y-8,120,12,{fill:C.panel2,rx:2});R(x+540,Y-8,120*v/100,12,{fill:C.ok,rx:2});T(x+716,Y+4,v+' %',{fs:13.5,mono:true,anchor:'end'})});
+    T(x+478,y+h-14,'расчёт 10 с назад',{fs:12,c:C.dim})}
+  else{T(x+478,y+100,'Для DYNPOS-2/3 включите',{fs:13.5,c:C.warn});T(x+478,y+120,'класс (РС ч. XV 8.9.5)',{fs:13.5,c:C.warn})}
+}
+
+function thruster(x,y,t){
+  const w=370,h=252,on=t.st==='ok';R(x,y,w,h,{stroke:on?C.line:C.alarm,sw:on?1:2});
+  T(x+16,y+30,t.id,{fs:19,w:700,mono:true});T(x+16+t.id.length*13+10,y+30,t.type==='az'?'поворотный':'туннельный',{fs:13,c:C.dim});
+  pill(x+w-14,y+12,on?'в управлении':'УПОР СНЯТ',on?C.ok:C.alarm,true);
+  const cx=x+76,cy=y+138,r=52;Ci(cx,cy,r,{stroke:C.line,sw:2,fill:C.panel2});
+  for(let b=0;b<360;b+=30){const[a1,a2]=pol(cx,cy,r,b),[b1,b2]=pol(cx,cy,r-(b%90?6:10),b);L(a1,a2,b1,b2,C.dim,b%90?1:2)}
+  if(t.type==='az'){[[0,'000'],[90,'090'],[180,'180'],[270,'270']].forEach(([b,s])=>{const[px,py]=pol(cx,cy,r+14,b);T(px,py+4,s,{fs:11,anchor:'middle',c:C.dim,mono:true})});
+    const[ex,ey]=pol(cx,cy,r-14,t.aA);L(cx,cy,ex,ey,on?C.act:C.dim,4);const h1=pol(ex,ey,10,t.aA+155),h2=pol(ex,ey,10,t.aA-155);P([[ex,ey],h1,h2],{fill:on?C.act:C.dim});
+    const tip=pol(cx,cy,r-1,t.aS),l=pol(cx,cy,r+13,t.aS-9),rr=pol(cx,cy,r+13,t.aS+9);P([tip,l,rr],{fill:C.panel,stroke:C.set,sw:2});}
+  else{T(cx,cy-r-6,'нос',{fs:11,anchor:'middle',c:C.dim});T(cx-r-6,cy+4,'ЛБ',{fs:11,anchor:'end',c:C.dim});T(cx+r+6,cy+4,'ПрБ',{fs:11,c:C.dim});
+    if(on&&Math.abs(t.act)>1){const dir=t.act>0?1:-1;const ln=12+Math.abs(t.act)/100*(r-22);L(cx,cy,cx+dir*ln,cy,C.act,4);P([[cx+dir*(ln+10),cy],[cx+dir*ln,cy-7],[cx+dir*ln,cy+7]],{fill:C.act})}}
+  Ci(cx,cy,4,{fill:C.fg});
+  const X=x+156;
+  const row=(Y,l,v,c)=>{T(X,Y,l,{fs:13.5,c:C.dim});T(x+w-16,Y,v,{fs:15.5,mono:true,anchor:'end',c:c||C.fg})};
+  row(y+70,'упор',t.kn+' кН');
+  // полоса упора
+  const bx=X,bw=w-16-X+x,by=y+84,neg=t.type==='tun';R(bx,by,bw,14,{fill:C.panel2,rx:2});
+  const z=neg?bx+bw/2:bx;if(neg)L(z,by-3,z,by+17,C.dim,1.5);
+  const sp=neg?bw/2:bw;const ax=z+Math.max(-1,Math.min(1,t.act/100))*sp;R(Math.min(ax,z),by+3,Math.abs(ax-z),8,{fill:on?C.act:C.dim,rx:1});
+  const sx=z+Math.max(-1,Math.min(1,t.set/100))*sp;L(sx,by-4,sx,by+18,C.set,3);
+  T(bx,by+30,neg?'−100':'0',{fs:10.5,c:C.dim,mono:true});T(bx+bw,by+30,'100 %',{fs:10.5,c:C.dim,mono:true,anchor:'end'});
+  row(y+138,'зад. / факт',sg(t.set,0).replace('+','')+' / '+sg(t.act,0).replace('+','')+' %',Math.abs(t.set-t.act)>20?C.warn:null);
+  if(t.type==='az')row(y+164,'угол з / ф',b3(t.aS)+' / '+b3(t.aA));
+  row(t.type==='az'?y+190:y+164,'обороты',t.rpm+' об/мин');
+  row(t.type==='az'?y+216:y+190,'мощность',t.kw+' кВт');
+  T(x+16,y+h-14,t.type==='az'?'△ задание · ➤ факт; 0° — к носу':'│ задание · ━ факт',{fs:11.5,c:C.dim});
+}
+
+function power(d){
+  const x=1540,y=816,w=368,h=252;R(x,y,w,h);title(x+16,y+28,'ЭНЕРГИЯ · 5 МИН');
+  const lc=d.load>=80?C.alarm:C.act;T(x+16,y+76,d.load+' %',{fs:40,mono:true,c:lc});T(x+w-16,y+52,d.kw+' кВт',{fs:16,mono:true,anchor:'end'});
+  T(x+w-16,y+74,'ГРЩ-1 '+d.bus[0]+' · ГРЩ-2 '+d.bus[1],{fs:12.5,mono:true,anchor:'end',c:C.dim});
+  const gx=x+46,gy=y+96,gw=w-62,gh=120;R(gx,gy,gw,gh,{fill:C.panel2,rx:2});
+  [0,50,100].forEach(v=>{const Y=gy+gh-v/100*gh;L(gx,Y,gx+gw,Y,C.grid);T(gx-6,Y+4,v,{fs:11,mono:true,anchor:'end',c:C.dim})});
+  const y80=gy+gh-0.8*gh;L(gx,y80,gx+gw,y80,C.alarm,1.5,'5 4');T(gx+gw-4,y80-5,'предел 80 %',{fs:11,c:C.alarm,anchor:'end',halo:true});
+  const n=60,pts=[];for(let i=0;i<n;i++){let v=16+Math.sin(i*1.7)*1.5+Math.sin(i*.6)*1;
+    if(d.spark==='spike'&&i>32){v=i===34?62:19+Math.sin(i)*1.5+Math.max(0,30-(i-34)*4)}
+    if(d.spark==='drop'&&i>32){v=i===34?62:i>56?0:19+Math.sin(i)*1.5+Math.max(0,30-(i-34)*4)}
+    if(d.spark==='rise'&&i>54)v=16+(i-54)*17;pts.push([gx+i/(n-1)*gw,gy+gh-Math.min(100,v)/100*gh])}
+  o+=`<polygon points="${gx},${gy+gh} ${pts.map(p=>p.join(',')).join(' ')} ${gx+gw},${gy+gh}" fill="${C.set}" fill-opacity=".12"/>`;
+  o+=`<polyline points="${pts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${C.set}" stroke-width="2"/>`;
+  const e=pts[n-1];Ci(e[0],e[1],4,{fill:lc});
+  T(gx,gy+gh+18,'−5 мин',{fs:11,c:C.dim,mono:true});T(gx+gw,gy+gh+18,'сейчас',{fs:11,c:C.dim,anchor:'end'});
+}
+
+const ANN=[
+ [20,18,'Шапка: режим, время в режиме, класс. «Судно…» и «Стоп имитатор» убраны в меню «Сервис», подальше от «Квитировать».'],
+ [24,116,'Цифровой курс вынесен в угол плоттера на свою подложку. Он не лежит поверх картушки и не перекрывает букву «С».'],
+ [600,116,'Ветер и течение показаны значками на ободе. Цифры (узлы, градусы) стоят в углу, поэтому подписи больше не налезают на кольца.'],
+ [12,468,'Подписи колец стоят на одном диагональном луче, который сам выбирается подальше от курса, ветра и течения, и лежат на тёмной подложке.'],
+ [24,700,'Скорость в узлах и поворот в °/мин видны прямо у плоттера.'],
+ [624,104,'Курс трёхзначный, с полосой ROT ЛБ/ПрБ. Скорость дана в узлах вдоль и поперёк, со стороной.'],
+ [624,350,'Отклонение со стороной. Если судно за шкалой мишени, на краю стоит стрелка и цифра. Без измерений крупно показана неопределённость, а не «0,0 м».'],
+ [624,572,'Активный режим залит цветом и подписан «работает». Блок «Точка и курс» в аварии не прячется.'],
+ [1176,104,'У тревоги есть форма значка и буква (▲ ◆ ●), текст полный, без обрезки. «Что делать» и «Держать здесь» стоят рядом с тревогой.'],
+ [1176,376,'Датчики показывают значения и расхождение гирокомпасов, а не только «0,0 с». Возраст виден только при потере связи.'],
+ [12,816,'У движителя деления через 30°, задание показано полым треугольником, факт стрелкой. Полоса упора горизонтальная, с нулём. Есть обороты и кВт.'],
+ [1540,816,'График мощности с осью, подписанным пределом 80 % и шкалой времени. Мощность разбита по ГРЩ.']
+];
+
+function render(i,ann){
+  const d=sc(i);d.k=S[i].k;o='';
+  R(0,0,1920,1080,{fill:C.bg,rx:0});
+  top(d);plot(d);heading(d);deviation(d);mode(d);alarms(d);sensors(d);env(d);
+  d.thr.forEach((t,j)=>thruster(12+j*382,816,t));power(d);
+  if(ann)ANN.forEach(([x,y],j)=>{o+=`<g><circle cx="${x}" cy="${y}" r="15" fill="${C.warn}" stroke="${C.bg}" stroke-width="3"/><text x="${x}" y="${y+5}" font-size="14" font-weight="700" text-anchor="middle" fill="#1a1205" font-family="${MONO}">${j+1}</text></g>`});
+  document.getElementById('scr').innerHTML=o;
+}
+
+/* ---------- страница ---------- */
+let cur=0,ann=true;
+const tabs=document.getElementById('tabs');
+S.forEach((s,i)=>{const b=document.createElement('button');b.id='tab'+i;b.textContent=s.name;b.setAttribute('aria-pressed',i===0);b.onclick=()=>{cur=i;[...tabs.children].forEach((c,j)=>c.setAttribute('aria-pressed',j===i));render(cur,ann)};tabs.appendChild(b)});
+const ab=document.getElementById('ann');ab.onclick=()=>{ann=!ann;ab.setAttribute('aria-pressed',ann);render(cur,ann)};
+document.getElementById('notes').innerHTML=ANN.map((a,j)=>`<div class="note"><b class="n">${j+1}</b><p>${esc(a[2])}</p></div>`).join('');
+render(0,true);
+
+const scores=[['Информативность',6,'Есть главное, но нет скорости в узлах, течения, координат, оборотов и значений датчиков.'],
+ ['Удобство в аварии',6,'«Что делать» хорош, но вытесняет «Точку и курс». «Стоп имитатор» стоит в шапке.'],
+ ['Читаемость графики',5,'Подписи «ветер» и «возмущение» налезают на кольца, курсовая линия режет «С», цвета пересекаются.'],
+ ['Тревоги',7,'Цвет и обратный отсчёт есть. Текст обрезан, тип тревоги различим только по цвету.']];
+document.getElementById('scores').innerHTML=scores.map(([n,v,p])=>`<div class="score"><div class="eyebrow">${n}</div><div class="v">${v}<small> / 10</small></div><div class="bar"><i style="width:${v*10}%;background:${v>=7?C.ok:v>=6?C.warn:C.alarm}"></i></div><p>${p}</p></div>`).join('');
+
+const F=[
+ ['k','3','Судно на плоттере нарисовано полным контуром, хотя курса нет','При HDG_LOST контур стоит на последнем курсе так же уверенно, как в норме, и оператор считывает курс, которого нет.','Без курса — серый пунктир без курсовой линии и подпись «курс неизвестен» (макет, ситуация 3).'],
+ ['k','2, 3, 4','«Что делать» заменяет блок «Точка и курс»','В аварии пропадают кнопки сдвига точки и курса, то есть управление уставками исчезает ровно тогда, когда оно нужно.','Перенести «Что делать» в панель тревог. Блок «Точка и курс» оставить на месте всегда.'],
+ ['k','4','Крупное «≈ 0,0 м» при отсутствии измерений','Главная цифра читается как «стоим точно в точке». Неопределённость до 9 м набрана мелко и обрезана многоточием.','Крупно писать «НЕ ИЗМЕРЯЕТСЯ» и «уход до ±9 м». Мишень залить зоной неопределённости, точку не рисовать.'],
+ ['k','1–5','«Стоп имитатор» и «Судно…» в шапке рядом с «Квитировать»','Промах на соседнюю кнопку останавливает имитатор, а на судне — меняет судно. Это кнопки обслуживания, не вахты.','Убрать в меню «Сервис» с подтверждением, а на судне в режиме «Позиция» блокировать совсем.'],
+ ['k','5','Отклонение 8,2 м при шкале мишени 5 м','Точка упирается в край мишени и выглядит как «около 5 м». Признака выхода за шкалу нет.','При выходе за шкалу ставить на краю стрелку по направлению и подпись «за шкалой: 8,2 м», либо перейти на шкалу 10 м.'],
+ ['v','1–5','Подписи на плоттере налезают друг на друга','«ветер» лежит на «25 м», «возмущение» на «13 м» и на курсовой линии. Курсовая линия идёт через «С» (экран 3).','Подписи колец поставить на один луч, свободный от курса и стрелок, с подложкой. Ветер и возмущение показывать значками на ободе, а цифры вынести в угол панели.'],
+ ['v','1–5','Нет скорости судна и течения, ROT мелким шрифтом','Скорость над грунтом (узлы), вдоль и поперёк, течение не показаны. Поворот спрятан в подпись под ошибкой курса.','Блок «Курс и скорость»: SOG в узлах, вдоль и поперёк со стороной, ROT с полосой ЛБ/ПрБ.'],
+ ['v','1–5','Ветер только в м/с','На мостике ветер обычно читают в узлах. Перевод в уме при 20 уз — лишняя нагрузка.','Узлы основным числом, м/с в скобках: «065° · 19,8 уз (10,2 м/с)».'],
+ ['v','1–5','Датчики показывают только возраст «0,0 с»','Не видно, что показывают три гирокомпаса и насколько они расходятся. Нет качества GNSS (фикс, спутники, HDOP).','Показывать значение и расхождение с медианой. Возраст выводить только когда связь пропала.'],
+ ['v','1–5','Плитки движителей: угол без шкалы, нет оборотов','Один указатель угла без делений и без задания. Вертикальная полоса без нуля и подписи. «309° / 308°» вылезает за плитку, «в управлении» обрезано (экран 5).','Деления через 30°, задание полым треугольником на ободе, факт стрелкой. Горизонтальная полоса с нулём, обороты и кВт.'],
+ ['v','1–5','Цвета пересекаются по смыслу','Оранжевый означает и «возмущение», и «предупреждение». Синий означает и «задано», и контур судна, и режим «Возврат».','Предупреждение — только янтарный. Возмущение и течение — бирюзовый. Факт — белый, задание — голубой.'],
+ ['v','1–5','Текст тревог обрезан, языки смешаны','В шапке и журнале многоточия. «команда here», «class 2», «> sim off GYRO3» в журнале оператора.','Полный текст в две строки. В тексте для оператора — названия кнопок: «Держать здесь», «Класс 2».'],
+ ['v','1–5','Активный режим плохо отличим','«Позиция» лишь чуть светлее соседних кнопок. С трёх метров не видно, какой режим включён.','Заливка цветом состояния и подпись «● работает». Ожидание подтверждения показывать мигающей рамкой с отсчётом.'],
+ ['v','3','Строка «Движители: 4 из 4 в управлении, команд…» обрезана','При снятом упоре именно эта строка важнее всего, а её конец не виден.','Число отдельно и крупно, красным, если не все в работе; пояснение — в тревоге.'],
+ ['v','5','График загрузки без оси; 100 % без тревоги','Нет шкалы значений и времени. «красная линия — 80 %» написано текстом под графиком. Загрузка 100 % красная, но тревоги нет.','Ось 0/50/100 %, подпись предела на линии, ось «−5 мин … сейчас». При долгом превышении 80 % — предупреждение.'],
+ ['v','1–5','Анализ отказа непонятен без пояснения','Зелёные полосы «100 / 100 %» не говорят, что это запас упора. «Выкл» выглядит как выбранная рабочая кнопка.','Подпись «Запас упора при наихудшем отказе». Состояние — плашкой «ВКЛ / ВЫКЛЮЧЕН», выбор — в меню.'],
+ ['u','1–5','Курс не трёхзначный','«8,5°» вместо «008,5°». Морская привычка — три цифры: меньше ошибок при чтении.','Формат 000,0° для курсов и пеленгов, 000° для углов движителей.'],
+ ['u','1–5','Нет координат точки и судна','Для доклада и журнала вахты нужны широта и долгота.','Строка координат в блоке отклонения.'],
+ ['u','1–5','Тип тревоги различим только цветом','Буквы A/W в квадрате одинаковой формы. Цветовую слепоту и ночную гамму это не выдерживает.','Форма плюс буква: ▲ A авария, ◆ W предупреждение, ● I сообщение (как в BAM, МЭК 62923).'],
+ ['u','1–5','Нет сумеречной и ночной гаммы','Нужна для работы ночью (МЭК 62288).','Три набора в Theme.qml и переключатель в меню «Сервис».'],
+ ['u','1–5','Легенда плоттера занимает угол','Пять строк легенды на месте, где удобнее держать курс или ветер.','Легенду — в подсказку по нажатию; значки сделать понятными сами по себе.']
+];
+const lab={k:'Критично',v:'Важно',u:'Улучшение'};
+document.getElementById('findings').innerHTML=F.map(([s,w,h,p,fx])=>`<div class="f ${s}"><div><div class="sev">${lab[s]}</div><div class="where">экран ${w}</div></div><div class="body"><h3>${esc(h)}</h3><p>${esc(p)}</p><p class="fix">${esc(fx)}</p></div></div>`).join('');
+})();
+</script>
