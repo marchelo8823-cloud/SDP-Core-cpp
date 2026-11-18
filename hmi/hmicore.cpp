@@ -1,11 +1,26 @@
 #include "hmicore.h"
+#include <QCoreApplication>
 #include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QSaveFile>
+#include <QStandardPaths>
 #include <QUrl>
 #include <cmath>
 
 using namespace dp;
 
-HmiCore::HmiCore(QObject* parent) : QObject(parent), core_({}, [this](const std::string& m) { say(m); }) {
+QString HmiCore::newRecordingPath() {
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/записи";
+    QDir().mkpath(dir);
+    const QString stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
+    return QDir(dir).filePath(QString("сеанс_%1_%2.csv").arg(stamp).arg(QCoreApplication::applicationPid()));
+}
+
+HmiCore::HmiCore(QObject* parent)
+    : QObject(parent), recordingPath_(newRecordingPath()),
+      core_(CoreSettings{10.0, recordingPath_.toStdString()}, [this](const std::string& m) { say(m); }) {
     connect(&timer_, &QTimer::timeout, this, &HmiCore::tick);
     timer_.start(100);
     refresh();
@@ -37,6 +52,32 @@ void HmiCore::loadShip(const QString& p) { command("ship load " + QString::fromS
 void HmiCore::simStart(const QString& p) { command("sim start " + QString::fromStdString(localPath(p))); }
 void HmiCore::ack() { core_.alarms().ack(core_.clock()); refresh(); }                    // квитирование через менеджер ядра: попадает и в журнал событий
 void HmiCore::ackCode(const QString& c) { core_.alarms().ack(core_.clock(), c.toStdString()); refresh(); }   // по одной тревоге
+
+bool HmiCore::exportRecording(const QString& pathOrUrl) {
+    auto fail = [this](const QString& message) {
+        recNotice_ = message; say(message.toStdString()); refresh(); return false;
+    };
+    const QUrl url(pathOrUrl);
+    const QString dest = url.isLocalFile() ? url.toLocalFile() : pathOrUrl;
+    if (dest.isEmpty()) return fail("Выгрузка записи: не выбран файл");
+    if (QFileInfo(dest).absoluteFilePath() == QFileInfo(recordingPath_).absoluteFilePath())
+        return fail("Выгрузка записи: выберите другой файл, не текущий журнал сеанса");
+    core_.flushLog();
+    QFile src(recordingPath_);
+    if (!src.open(QIODevice::ReadOnly)) return fail("Выгрузка записи: журнал сеанса недоступен");
+    QSaveFile out(dest);                                      // не оставлять половину CSV при ошибке записи
+    if (!out.open(QIODevice::WriteOnly)) return fail("Выгрузка записи: не удалось открыть " + dest);
+    while (!src.atEnd()) {
+        const QByteArray chunk = src.read(1024 * 1024);
+        if (chunk.isEmpty() && src.error() != QFileDevice::NoError) return fail("Выгрузка записи: ошибка чтения журнала");
+        if (out.write(chunk) != chunk.size()) return fail("Выгрузка записи: ошибка записи " + dest);
+    }
+    if (!out.commit()) return fail("Выгрузка записи: не удалось сохранить " + dest);
+    recNotice_ = "Выгружено: " + dest;
+    say(("Запись сеанса выгружена: " + dest).toStdString());
+    refresh();
+    return true;
+}
 
 // Диаграмма возможностей: «Все движители» и отказ каждого — предельный и рабочий (80 % упора) ветер по 36 направлениям.
 // Расчёт по средним силам, курс постоянный, ветер/волна/течение с одного направления — оценка по модели ядра, не по правилам РС.
@@ -93,6 +134,8 @@ void HmiCore::refresh() {
     m["clock"] = core_.clock();
     m["hasShip"] = core_.hasShip();
     m["shipName"] = core_.ship() ? QString::fromStdString(core_.ship()->vessel.name) : QString();
+    const QFileInfo recInfo(recordingPath_);
+    m["recActive"] = core_.logActive(); m["recFile"] = recInfo.fileName(); m["recBytes"] = recInfo.size(); m["recNotice"] = recNotice_;
     m["n"] = es.n; m["e"] = es.e; m["hdg"] = std::fmod(rad2deg(es.psi) + 360.0, 360.0);
     m["rot"] = rad2deg(es.r) * 60.0;                              // °/мин
     m["u"] = es.u; m["v"] = es.v;
