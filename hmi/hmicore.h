@@ -37,6 +37,7 @@ public:
     Q_INVOKABLE void simStart(const QString& pathOrUrl);
     Q_INVOKABLE void ack();                                       // квитирование всех тревог (через менеджер ядра)
     Q_INVOKABLE void ackCode(const QString& code);                // квитирование одной тревоги по коду
+    Q_INVOKABLE bool exportRecording(const QString& pathOrUrl);   // актуальная копия CSV-журнала; запись продолжается
     // Диаграмма возможностей (capability plot): расчёт по кнопке, не каждый цикл (тяжёлый перебор направлений).
     Q_INVOKABLE void capRun(double currentMS, bool wavesWithWind, double maxWindMS);
     void runFor(double seconds);                                  // прогнать ядро без реального времени (для проверок и снимков)
@@ -53,7 +54,9 @@ private:
     void refresh();
     void say(const std::string& m);
     static std::string localPath(const QString& p);
+    static QString newRecordingPath();
 
+    QString recordingPath_, recNotice_;
     dp::Core core_;
     QTimer timer_;
     bool paused_ = false;

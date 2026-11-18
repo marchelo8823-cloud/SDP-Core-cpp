@@ -32,6 +32,13 @@ if(NOT WIN32)
            --tab 7 --size 1366x768 --expect-fc 1 --screenshot ${CMAKE_BINARY_DIR}/hmi_forecast.png
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
   set_tests_properties(hmi_forecast PROPERTIES TIMEOUT 120)
+  # запись сеанса: выгруженный CSV содержит удержание и принимается штатным tools/sdp_report.py
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME hmi_recording COMMAND ${CMAKE_COMMAND}
+             -DHMI=$<TARGET_FILE:sdp_hmi> -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_BINARY_DIR}
+             -DPYTHON=${Python3_EXECUTABLE} -P ${CMAKE_SOURCE_DIR}/tests/hmi_recording_test.cmake)
+    set_tests_properties(hmi_recording PROPERTIES TIMEOUT 120)
+  endif()
   # подтверждение смены режима (РС ч. XV 8.5.7): одно нажатие «Ожидание» режим не снимает, второе подряд — снимает
   foreach(n 1 2)
     set(pr "")

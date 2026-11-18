@@ -9,6 +9,7 @@
 //   --tab <0-8> (открыть вкладку: 0 — Главный … 8 — Настройки; для снимков вкладок)
 //   --alarms <A|W> (раскрыть список тревог из строки шапки: A — аварийные, W — предупреждения; для снимков)
 //   --workspace <full|watch|maneuver> (готовый набор рабочего места на время запуска, в настройки не пишется)
+//   --export-recording <файл.csv> (выгрузить актуальный журнал; при снимке ошибка выгрузки даёт код 7)
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -30,6 +31,7 @@ int main(int argc, char** argv) {
     int tabArg = -1;                               // открыть вкладку (для снимков)
     QString alarmsArg;                             // раскрытый список тревог шапки: A или W (для снимков)
     QString workspaceArg;                          // готовый набор: full, watch или maneuver (для проверок и снимков)
+    bool exportOk = true;
     HmiCore core;
     for (int i = 1; i < a.size(); ++i) {
         auto next = [&]() { return i + 1 < a.size() ? a[++i] : QString(); };
@@ -49,6 +51,10 @@ int main(int argc, char** argv) {
         else if (k == "--tab") tabArg = next().toInt();
         else if (k == "--alarms") alarmsArg = next();
         else if (k == "--workspace") workspaceArg = next();
+        else if (k == "--export-recording") {
+            const QString path = next(); exportOk = core.exportRecording(path);
+            std::fprintf(exportOk ? stdout : stderr, exportOk ? "запись выгружена: %s\n" : "не удалось выгрузить запись: %s\n", path.toUtf8().constData());
+        }
     }
     QQmlApplicationEngine eng;
     int qmlWarnings = 0;   // ошибки и предупреждения QML: при проверке со снимком — код выхода 3
@@ -99,7 +105,7 @@ int main(int argc, char** argv) {
             const QImage img = win->grabWindow();
             const bool ok = img.save(shot);
             std::fprintf(ok ? stdout : stderr, ok ? "снимок: %s\n" : "не удалось сохранить снимок %s\n", shot.toUtf8().constData());
-            QCoreApplication::exit(!ok ? 2 : !fcOk ? 6 : exitPress ? exitPress : qmlWarnings ? 3 : 0);
+            QCoreApplication::exit(!ok ? 2 : !fcOk ? 6 : !exportOk ? 7 : exitPress ? exitPress : qmlWarnings ? 3 : 0);
         });
     }
     return app.exec();

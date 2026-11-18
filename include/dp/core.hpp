@@ -43,6 +43,8 @@ public:
     Core(const Core&) = delete; Core& operator=(const Core&) = delete;
 
     void stop() { closeIo(); if (log_) log_.flush(); }
+    void flushLog() { if (log_) log_.flush(); }                 // снять актуальную копию журнала, не останавливая запись
+    bool logActive() const { return log_.is_open() && log_.good(); }
 
     // ---------------------------------------------------------------- данные судна
     // Загрузка книги судна. Только когда судна нет или ядро в ожидании. При ошибках прежнее судно остаётся.
