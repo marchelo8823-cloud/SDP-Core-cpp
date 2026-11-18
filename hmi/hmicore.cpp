@@ -108,6 +108,21 @@ void HmiCore::refresh() {
     // неизвестная сила (течение, волны и всё, что не измерено) в мировых осях — направление «куда» и величина
     m["distN"] = es.biasN; m["distE"] = es.biasE;
     m["load"] = o.alloc.utilization; m["powerKW"] = o.powerKW;
+    // Прогноз ядра: текущая нагрузка считается по тому же требованию силы/момента, горизонты — уже готовый FcOut.
+    double fcNow = 0;
+    if (core_.hasShip()) {
+        auto need = [](double req, double cap) { return std::fabs(req) < 1.0 ? 0.0 : (cap > 1e-6 ? std::fabs(req) / cap : 1e9); };
+        fcNow = std::max({need(o.ctl.tau.X, o.cap.X), need(o.ctl.tau.Y, o.cap.Y), need(o.ctl.tau.N, o.cap.N)});
+    }
+    const FcOut& fc = o.fc;
+    m["fcNow"] = fcNow; m["fcOn"] = fc.on; m["fcApply"] = fc.apply; m["fcValid"] = fc.valid;
+    m["fcDataSec"] = fc.dataSec; m["fcFilled"] = fc.filled; m["fcTotal"] = fc.total; m["fcConf"] = fc.conf; m["fcWarn"] = fc.warn;
+    m["fcWarnRatio"] = 0.9; m["fcClearRatio"] = 0.8; m["fcWarnHorizonS"] = 300.0;
+    QVariantList fh;
+    for (size_t i = 0; i < fc.horizonS.size() && i < fc.load.size(); ++i) {
+        QVariantMap x; x["min"] = fc.horizonS[i] / 60.0; x["load"] = fc.load[i]; fh.push_back(x);
+    }
+    m["fcHorizons"] = fh;
     m["tauX"] = o.ctl.tau.X; m["tauY"] = o.ctl.tau.Y; m["tauN"] = o.ctl.tau.N;
     m["capX"] = o.cap.X; m["capY"] = o.cap.Y; m["capN"] = o.cap.N;
     m["roll"] = rad2deg(es.roll); m["pitch"] = rad2deg(es.pitch); m["heave"] = es.heave;
@@ -121,6 +136,8 @@ void HmiCore::refresh() {
         m["pivotX"] = ct.pivotX(); m["pivotY"] = ct.pivotY();
         m["gainHigh"] = ct.cfg().highGain; m["gainHighK"] = ct.cfg().gainHighK;
         m["rateRotDegMin"] = ct.capRot() * 60.0; m["rateSpeedKn"] = ct.capSpeed() / 0.514444;
+        const ForecastCfg& fcfg = eng->forecast().cfg();
+        m["fcWarnRatio"] = fcfg.warnRatio; m["fcClearRatio"] = fcfg.clearRatio; m["fcWarnHorizonS"] = fcfg.warnHorizonS;
         const Consequence& ca = eng->consequence();
         m["caClass"] = ca.dpClass(); m["caRan"] = ca.ran(); m["caAge"] = ca.ran() ? core_.clock() - ca.lastRunT() : -1.0; m["caSingle"] = ca.singleFailures();
         QVariantList gl; bool bad = false;
