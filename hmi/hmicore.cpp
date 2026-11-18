@@ -35,7 +35,8 @@ void HmiCore::command(const QString& line) {
 }
 void HmiCore::loadShip(const QString& p) { command("ship load " + QString::fromStdString(localPath(p))); }
 void HmiCore::simStart(const QString& p) { command("sim start " + QString::fromStdString(localPath(p))); }
-void HmiCore::ack() { for (const QVariant& a : alm_) acked_.insert(a.toMap().value("code").toString()); refresh(); }
+void HmiCore::ack() { core_.alarms().ack(core_.clock()); refresh(); }                    // квитирование через менеджер ядра: попадает и в журнал событий
+void HmiCore::ackCode(const QString& c) { core_.alarms().ack(core_.clock(), c.toStdString()); refresh(); }   // по одной тревоге
 
 void HmiCore::tick() {
     if (paused_) return;
@@ -161,15 +162,20 @@ void HmiCore::refresh() {
     }
     sen_ = sn;
 
-    QVariantList al; QSet<QString> now;
-    for (const auto& a : o.alarms) {
-        QVariantMap x; const QString code = QString::fromStdString(a.code);
-        x["code"] = code; x["text"] = QString::fromStdString(a.text); x["level"] = a.level();   // 1 — аварийная, 2 — предупреждение, 3 — сообщение
-        x["acked"] = acked_.contains(code); now.insert(code);
+    QVariantList al;
+    for (const auto& r : core_.alarms().records()) {   // динамическая страница менеджера тревог ядра (как в sdp_run)
+        QVariantMap x; const QString code = QString::fromStdString(r.code);
+        x["code"] = code; x["text"] = QString::fromStdString(r.text); x["level"] = r.prio;   // 0 авария, 1 тревога, 2 предупреждение, 3 инфо
+        x["acked"] = r.acked; x["gone"] = r.state == dp::AlarmNormal;                        // условие ушло, ждёт квитирования
+        x["tFirst"] = r.tFirst; x["count"] = r.count;                                        // время появления и число повторов (только показ)
         al.push_back(x);
     }
-    for (auto it = acked_.begin(); it != acked_.end();) { if (!now.contains(*it)) it = acked_.erase(it); else ++it; }   // снятая тревога при повторе снова «новая»
-    std::stable_sort(al.begin(), al.end(), [](const QVariant& a, const QVariant& b) { return a.toMap()["level"].toInt() < b.toMap()["level"].toInt(); });
+    // по важности, внутри класса — новые сверху (последнее сообщение в ряду шапки, как в K-Pos)
+    std::stable_sort(al.begin(), al.end(), [](const QVariant& a, const QVariant& b) {
+        const QVariantMap ma = a.toMap(), mb = b.toMap();
+        if (ma["level"].toInt() != mb["level"].toInt()) return ma["level"].toInt() < mb["level"].toInt();
+        return ma["tFirst"].toDouble() > mb["tFirst"].toDouble();
+    });
     alm_ = al;
 
     if (core_.hasShip() && es.posValid && core_.clock() - lastTrail_ >= 2.0) { trail_.push_back({es.n, es.e}); lastTrail_ = core_.clock(); if (trail_.size() > 450) trail_.pop_front(); }
