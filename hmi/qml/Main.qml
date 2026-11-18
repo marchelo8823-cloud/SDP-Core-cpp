@@ -56,6 +56,21 @@ ApplicationWindow {
             else { win.armedCmd = cmd; armT.restart() }
         }
     }
+    // Гирокомпасы 1-2-3: зелёный — норма, жёлтый — расхождение или отбраковка, красный — нет данных (как кружки в K-Pos)
+    component GyroDots: Row {
+        spacing: 4
+        readonly property var gyros: core.sensors.filter(x => x.kind === "курс")
+        Repeater {
+            model: gyros
+            delegate: Rectangle {
+                width: 18; height: 18; radius: 9
+                readonly property real dd: Math.abs(modelData.dHdg || 0)
+                color: !modelData.valid ? Theme.alarm : ((modelData.state && modelData.state !== "OK") || dd > 1) ? Theme.warn : Theme.ok
+                Label { anchors.centerIn: parent; text: modelData.id.replace("GYRO", ""); color: Theme.bg; font.pixelSize: 10; font.bold: true }
+            }
+        }
+    }
+
     readonly property bool posLossOrReturn: { for (let i = 0; i < core.alarms.length; ++i) { const c = core.alarms[i].code; if (c === "POS_DROPOUT" || c === "POS_ALL_REJ" || c === "POS_RETURN") return true } return false }
 
     // Ряд строки тревог: плашка А/W, последнее сообщение с временем, «ещё N»; щелчок раскрывает список (как в K-Pos)
@@ -87,6 +102,8 @@ ApplicationWindow {
     // история для трендов: раз в секунду, 60 минут
     property var hist: ({ err: [], load: [], wind: [], pow: [] })
     property int trendWin: 15        // окно трендов, минут (5/15/60)
+    property int histTick: 0         // счётчик секунд — перерисовка мини-тренда мощности
+    readonly property real powerMax: core.thrusters.reduce((a, t) => a + (t.powerMaxKW || 0), 0)   // установленная мощность, кВт
     Timer {
         interval: 1000; running: true; repeat: true
         onTriggered: {
@@ -96,6 +113,7 @@ ApplicationWindow {
             h.wind.push(s.windValid ? Theme.knots(s.windSpeed) : NaN)
             h.pow.push(s.hasShip ? s.powerKW || 0 : NaN)
             if (h.err.length > 3600) { h.err.shift(); h.load.shift(); h.wind.shift(); h.pow.shift() }
+            win.histTick++
             win.repaintTrends()
         }
     }
@@ -241,11 +259,12 @@ ApplicationWindow {
                             RowLayout {
                                 Layout.fillWidth: true
                                 Caption { text: "Курс и скорость"; Layout.fillWidth: true }
+                                GyroDots { }
                                 Rectangle {
                                     radius: 2; implicitWidth: srcL.implicitWidth + 12; implicitHeight: srcL.implicitHeight + 4
                                     color: !s.hdgValid ? Theme.alarm : s.hdgDR ? Theme.warn : Qt.darker(Theme.ok, 1.6)
                                     Label { id: srcL; anchors.centerIn: parent; font.pixelSize: 12; font.bold: true
-                                            color: s.hdgValid && !s.hdgDR ? Theme.text : Theme.bg
+                                            color: s.hdgValid && !s.hdgDR ? "#ffffff" : Theme.bg
                                             text: !s.hdgValid ? "НЕТ ДАННЫХ" : s.hdgDR ? "ПО СЧИСЛЕНИЮ" : "по гирокомпасам" }
                                 }
                             }
@@ -373,6 +392,116 @@ ApplicationWindow {
                             }
                             Caption { text: "Качка (крен / дифферент)" } Label { text: Theme.num(s.roll, 1) + "° / " + Theme.num(s.pitch, 1) + "°"; color: Theme.text; font.family: Theme.mono }
                             Caption { text: "Волнение (по МИО)" } Label { text: s.waveHs >= 0 ? Theme.num(s.waveHs, 1) + " м" : "не оценено"; color: Theme.text; font.family: Theme.mono }
+                        }
+                    }
+                    // Круговой индикатор отклонения: судно относительно заданной точки, нос вверх, кольцо = 5 м (как Position deviation в K-Pos)
+                    Panel {
+                        Layout.fillWidth: true; Layout.preferredHeight: 138
+                        RowLayout {
+                            anchors.fill: parent; anchors.margins: 10; spacing: 12
+                            Canvas {
+                                id: devCv
+                                Layout.preferredWidth: 112; Layout.preferredHeight: 112; Layout.alignment: Qt.AlignVCenter
+                                property var st: win.s
+                                onStChanged: requestPaint()
+                                Connections { target: Theme; function onSchemeChanged() { devCv.requestPaint() } }
+                                onPaint: {
+                                    const g = getContext("2d"); g.reset()
+                                    const cx = width / 2, cy = height / 2, R = Math.min(width, height) / 2 - 4
+                                    g.strokeStyle = Theme.line; g.lineWidth = 1.5
+                                    g.beginPath(); g.arc(cx, cy, R, 0, 2 * Math.PI); g.stroke()      // кольцо допуска
+                                    g.strokeStyle = Theme.grid; g.lineWidth = 1; g.beginPath()
+                                    g.moveTo(cx - R, cy); g.lineTo(cx + R, cy); g.moveTo(cx, cy - R); g.lineTo(cx, cy + R); g.stroke()
+                                    g.strokeStyle = Theme.dim; g.beginPath()                          // заданная точка — крест в центре
+                                    g.moveTo(cx - 5, cy); g.lineTo(cx + 5, cy); g.moveTo(cx, cy - 5); g.lineTo(cx, cy + 5); g.stroke()
+                                    if (st.posValid !== true) {
+                                        g.fillStyle = Theme.alarm; g.font = "bold 13px '" + Theme.font + "'"; g.textAlign = "center"
+                                        g.fillText("НЕТ", cx, cy - R / 2); return
+                                    }
+                                    const a = -(st.errAlong || 0), c = -(st.errCross || 0)            // судно от точки: + нос / + ПрБ
+                                    const d = Math.hypot(a, c), lim = 5
+                                    if (d > 0.05) {                                                   // сектор направления отклонения ±12°
+                                        const sa = Math.atan2(c, a) - Math.PI / 2                     // экранный угол (0 = нос вверх → -y)
+                                        g.globalAlpha = 0.22; g.fillStyle = d > lim ? Theme.warn : Theme.accent
+                                        g.beginPath(); g.moveTo(cx, cy)
+                                        g.arc(cx, cy, R, sa - 0.21, sa + 0.21); g.closePath(); g.fill()
+                                        g.globalAlpha = 1
+                                    }
+                                    const k = d > lim ? lim / d : 1                                   // за кольцом — точка на ободе
+                                    g.fillStyle = d > lim ? Theme.warn : Theme.accent
+                                    g.beginPath(); g.arc(cx + c * k / lim * R, cy - a * k / lim * R, 5, 0, 2 * Math.PI); g.fill()
+                                }
+                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true; spacing: 2
+                                Caption { text: "Отклонение позиции" }
+                                Label { text: s.posValid ? Theme.num(s.errDist, 2) + " м" : "НЕТ"; font.pixelSize: 26; font.family: Theme.mono
+                                        color: !s.posValid ? Theme.alarm : s.posDR || s.errDist > 5 ? Theme.warn : Theme.text }
+                                Label { text: "судно " + Theme.num(Math.abs(-(s.errAlong || 0)), 1) + " м " + (-(s.errAlong || 0) >= 0 ? "к носу" : "к корме") + " · " + Theme.num(Math.abs(-(s.errCross || 0)), 1) + " м " + (-(s.errCross || 0) >= 0 ? "к ПрБ" : "к ЛБ")
+                                        color: Theme.text; font.pixelSize: Theme.fsSmall; elide: Text.ElideRight; Layout.fillWidth: true }
+                                Label { text: "кольцо = 5 м, нос вверх"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+                            }
+                        }
+                    }
+                    // Потребление мощности: вертикальная шкала 0…установленная + мини-тренд 15 мин (как Power consumption в K-Pos)
+                    Panel {
+                        Layout.fillWidth: true; Layout.preferredHeight: 150
+                        ColumnLayout {
+                            anchors.fill: parent; anchors.margins: 10; spacing: 4
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Caption { text: "Потребление мощности"; Layout.fillWidth: true }
+                                Label { text: Theme.num(s.powerKW, 0) + " / " + Theme.num(win.powerMax, 0) + " кВт"; color: Theme.text; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true; Layout.fillHeight: true; spacing: 10
+                                Canvas {
+                                    id: powBar
+                                    Layout.preferredWidth: 52; Layout.fillHeight: true
+                                    property var st: win.s
+                                    onStChanged: requestPaint()
+                                    Connections { target: Theme; function onSchemeChanged() { powBar.requestPaint() } }
+                                    onPaint: {
+                                        const g = getContext("2d"); g.reset()
+                                        const W = width, H = height, max = Math.max(1, win.powerMax)
+                                        const frac = Math.max(0, Math.min(1, (st.powerKW || 0) / max))
+                                        g.fillStyle = Theme.bg; g.fillRect(4, 2, 14, H - 4)
+                                        g.strokeStyle = Theme.line; g.strokeRect(4, 2, 14, H - 4)
+                                        g.fillStyle = frac > 0.9 ? Theme.warn : Theme.ok
+                                        g.fillRect(5, 2 + (H - 4) * (1 - frac), 12, (H - 4) * frac)
+                                        g.fillStyle = Theme.dim; g.font = "10px '" + Theme.font + "'"; g.textAlign = "left"
+                                        g.fillText(Theme.num(max, 0), 22, 11)
+                                        g.fillText(Theme.num(max / 2, 0), 22, H / 2 + 3)
+                                        g.fillText("0", 22, H - 3)
+                                    }
+                                }
+                                Canvas {
+                                    id: powMini
+                                    Layout.fillWidth: true; Layout.fillHeight: true
+                                    property int tk: win.histTick
+                                    onTkChanged: requestPaint()
+                                    Connections { target: Theme; function onSchemeChanged() { powMini.requestPaint() } }
+                                    onPaint: {
+                                        const g = getContext("2d"); g.reset()
+                                        const W = width, H = height, max = Math.max(1, win.powerMax)
+                                        const v = win.hist.pow.slice(-900)                  // 15 минут
+                                        g.strokeStyle = Theme.grid; g.lineWidth = 1
+                                        g.beginPath(); g.moveTo(0, H / 2); g.lineTo(W, H / 2); g.stroke()
+                                        if (v.length < 2) {
+                                            g.fillStyle = Theme.dim; g.font = "11px '" + Theme.font + "'"; g.textAlign = "center"
+                                            g.fillText("история набирается…", W / 2, H / 2 - 6); return
+                                        }
+                                        g.strokeStyle = Theme.ok; g.lineWidth = 1.5; g.beginPath()
+                                        let started = false
+                                        for (let i = 0; i < v.length; ++i) {
+                                            if (isNaN(v[i])) { started = false; continue }
+                                            const x = i / 899 * W, y = H - 2 - Math.min(1, v[i] / max) * (H - 4)
+                                            if (!started) { g.moveTo(x, y); started = true } else g.lineTo(x, y)
+                                        }
+                                        g.stroke()
+                                    }
+                                }
+                            }
                         }
                     }
                     Panel {
