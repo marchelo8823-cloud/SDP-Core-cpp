@@ -1055,6 +1055,53 @@ ApplicationWindow {
                             }
                         }
                     }
+                    Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 10
+                        Caption { text: "Прогноз загрузки комплекса"; Layout.fillWidth: true }
+                        Label {
+                            color: s.fcWarn ? Theme.alarm : Theme.dim; font.pixelSize: Theme.fsSmall
+                            text: !s.fcOn ? "Выключен"
+                                 : !s.fcValid ? "Накопление: " + Theme.num((s.fcDataSec || 0) / 60, 1) + " мин · прогноз появится после первых данных"
+                                 : "Данные " + Theme.num((s.fcDataSec || 0) / 60, 1) + " мин · ячеек " + (s.fcFilled || 0) + "/" + (s.fcTotal || 0)
+                                   + " · доверие " + Theme.num((s.fcConf || 0) * 100, 0) + " %" + (s.fcApply ? " · поправка применяется" : " · без поправки")
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 12
+                        ColumnLayout {
+                            Layout.fillWidth: true; spacing: 3
+                            Caption { text: "Сейчас" }
+                            Label { text: Theme.num((s.fcNow || 0) * 100, 0) + " %"; color: (s.fcNow || 0) >= (s.fcWarnRatio || 0.9) ? Theme.alarm : Theme.text; font.family: Theme.mono; font.pixelSize: 20 }
+                            Rectangle {
+                                Layout.fillWidth: true; implicitHeight: 14; radius: 2; color: Theme.bg; border.color: Theme.line
+                                Rectangle { width: Math.min(1, s.fcNow || 0) * parent.width; height: parent.height; radius: 2; color: (s.fcNow || 0) >= (s.fcWarnRatio || 0.9) ? Theme.alarm : Theme.accent }
+                            }
+                        }
+                        Repeater {
+                            model: s.fcHorizons || []
+                            delegate: ColumnLayout {
+                                Layout.fillWidth: true; spacing: 3
+                                Caption { text: "+" + Theme.num(modelData.min, 0) + " мин" }
+                                Label { text: Theme.num(modelData.load * 100, 0) + " %"; color: modelData.load >= (s.fcWarnRatio || 0.9) ? Theme.alarm : modelData.load >= (s.fcClearRatio || 0.8) ? Theme.warn : Theme.text; font.family: Theme.mono; font.pixelSize: 20 }
+                                Rectangle {
+                                    Layout.fillWidth: true; implicitHeight: 14; radius: 2; color: Theme.bg; border.color: Theme.line
+                                    Rectangle { width: Math.min(1, modelData.load || 0) * parent.width; height: parent.height; radius: 2; color: modelData.load >= (s.fcWarnRatio || 0.9) ? Theme.alarm : modelData.load >= (s.fcClearRatio || 0.8) ? Theme.warn : Theme.ok }
+                                }
+                            }
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 8
+                        ConfirmBtn { label: s.fcOn ? "Выключить прогноз" : "Включить прогноз"; cmd: s.fcOn ? "forecast off" : "forecast on"; highlighted: s.fcOn === true; enabled: s.hasShip === true; implicitHeight: 32; Layout.fillWidth: true }
+                        ConfirmBtn { label: s.fcApply ? "Не применять поправку" : "Применять поправку"; cmd: s.fcApply ? "forecast apply off" : "forecast apply on"; highlighted: s.fcApply === true; enabled: s.fcOn === true; implicitHeight: 32; Layout.fillWidth: true }
+                        ConfirmBtn { label: "Очистить данные"; cmd: "forecast reset"; enabled: s.hasShip === true; implicitHeight: 32; Layout.fillWidth: true }
+                    }
+                    Label {
+                        Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.dim; font.pixelSize: Theme.fsSmall
+                        text: "Оценка по модели и накопленным данным, порывы не предсказываются. Накопление — в спокойном удержании после 120 с. Тревога FORECAST_LOAD: "
+                              + Theme.num((s.fcWarnRatio || 0.9) * 100, 0) + " % на +" + Theme.num((s.fcWarnHorizonS || 300) / 60, 0) + " мин, снятие ниже " + Theme.num((s.fcClearRatio || 0.8) * 100, 0) + " %."
+                    }
                     Item { Layout.fillHeight: true }
                 }
             }

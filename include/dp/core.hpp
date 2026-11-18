@@ -177,6 +177,7 @@ public:
                "  law pid|lqr|mpc                     закон управления\n"
                "  gain high|low                       усиление контуров\n"
                "  cap [течение м/с]                   возможности удержания: предельный ветер по сценариям\n"
+               "  forecast on|off | forecast apply on|off | forecast reset   прогноз загрузки и поправка модели\n"
                "  class 2|3|off                       анализ последствий отказа (по умолчанию выключен)\n"
                "  ca [ветер м/с откуда ° [течение]]   анализ последствий сейчас; с погодой — по введённой погоде\n"
                "  status | help | quit\n";
@@ -304,6 +305,20 @@ public:
             std::string w; is >> w;
             if (w == "high" || w == "low") { ControlCfg cc = eng.controller().cfg(); cc.highGain = (w == "high"); eng.controller().configure(cc); say(std::string("Усиление: ") + (cc.highGain ? "высокое" : "низкое")); }
             else say("Формат: gain high|low");
+        }
+        else if (c == "forecast") {
+            std::string w, v; is >> w >> v;
+            ForecastCfg fc = eng.forecast().cfg();
+            if (w == "on" || w == "off") {
+                fc.enabled = w == "on"; eng.forecast().configure(fc);
+                say(std::string("Прогноз загрузки: ") + (fc.enabled ? "включён" : "выключен"));
+            }
+            else if (w == "apply" && (v == "on" || v == "off")) {
+                fc.apply = v == "on"; eng.forecast().configure(fc);
+                say(std::string("Поправка модели по накопленным данным: ") + (fc.apply ? "применяется" : "не применяется"));
+            }
+            else if (w == "reset") { eng.forecast().reset(); say("Накопленные данные прогноза очищены"); }
+            else say("Формат: forecast on|off | forecast apply on|off | forecast reset");
         }
         else if (c == "cap") {
             CapEnv e; double cur = 0; if (is >> cur) e.currentMS = clampd(cur, 0, 5);

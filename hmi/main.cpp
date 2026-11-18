@@ -3,6 +3,7 @@
 //   --ship <книга судна>  --sim <книга имитатора>  --cmd "<команда ядра>" (можно несколько)  --run <с> (прогнать ядро без реального времени)
 //   --screenshot <файл.png>  --size <Ш>x<В>
 //   --expect-ca <класс> (после нажатий: класс анализа последствий 0, 2 или 3)
+//   --expect-fc <0|1> (при снимке: прогноз не рассчитан / рассчитан; при несовпадении код выхода 6)
 //   --press "<надпись кнопки>" (можно несколько; нажатие кнопки на экране)  --expect-mode <код> (после нажатий: 0 — ожидание, 3 — курс, 4 — позиция; иначе код выхода 4)
 //   --palette <day|dusk|night> (палитра на время запуска, в настройки не пишется)  --onboard (бортовой режим на время запуска)
 //   --tab <0-8> (открыть вкладку: 0 — Главный … 8 — Настройки; для снимков вкладок)
@@ -24,7 +25,7 @@ int main(int argc, char** argv) {
     app.setApplicationName("SDP HMI");
     app.setOrganizationName("SDP");
     QStringList a = app.arguments();
-    QString shot; int w = 1920, h = 1080; QStringList presses; int expectMode = -1, expectCa = -1;
+    QString shot; int w = 1920, h = 1080; QStringList presses; int expectMode = -1, expectCa = -1, expectFc = -1;
     QString paletteArg; bool onboardArg = false;   // временно, на время запуска (проверки и снимки); в настройки не пишется
     int tabArg = -1;                               // открыть вкладку (для снимков)
     QString alarmsArg;                             // раскрытый список тревог шапки: A или W (для снимков)
@@ -41,6 +42,7 @@ int main(int argc, char** argv) {
         else if (k == "--press") presses << next();
         else if (k == "--expect-mode") expectMode = next().toInt();
         else if (k == "--expect-ca") expectCa = next().toInt();
+        else if (k == "--expect-fc") expectFc = next().toInt();
         else if (k == "--size") { const QStringList p = next().split('x'); if (p.size() == 2) { w = p[0].toInt(); h = p[1].toInt(); } }
         else if (k == "--palette") paletteArg = next();
         else if (k == "--onboard") onboardArg = true;
@@ -88,10 +90,16 @@ int main(int argc, char** argv) {
     if (!shot.isEmpty() && win) {
         core.setPaused(true);
         QTimer::singleShot(1500, [&]() {
+            bool fcOk = true;
+            if (expectFc >= 0) {
+                const bool valid = core.property("s").toMap().value("fcValid").toBool();
+                fcOk = valid == (expectFc != 0);
+                if (!fcOk) std::fprintf(stderr, "ожидался fcValid=%d, а не %d\n", expectFc, valid ? 1 : 0);
+            }
             const QImage img = win->grabWindow();
             const bool ok = img.save(shot);
             std::fprintf(ok ? stdout : stderr, ok ? "снимок: %s\n" : "не удалось сохранить снимок %s\n", shot.toUtf8().constData());
-            QCoreApplication::exit(!ok ? 2 : exitPress ? exitPress : qmlWarnings ? 3 : 0);
+            QCoreApplication::exit(!ok ? 2 : !fcOk ? 6 : exitPress ? exitPress : qmlWarnings ? 3 : 0);
         });
     }
     return app.exec();
