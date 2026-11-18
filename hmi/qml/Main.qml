@@ -443,18 +443,24 @@ ApplicationWindow {
                     Panel {
                         id: modePanel; anchors.fill: parent
                         ColumnLayout {
-                            anchors.fill: parent; anchors.margins: 10; spacing: 6
+                            anchors.fill: parent; anchors.margins: 6; spacing: 2
                             Caption { text: "Режим" }
                             RowLayout {
                                 spacing: 6
-                                ConfirmBtn { label: "Ожидание"; cmd: "standby"; highlighted: s.modeCode === 0; Layout.fillWidth: true }
-                                ConfirmBtn { label: "Курс"; cmd: "heading"; highlighted: s.modeCode === 3; enabled: s.stateCode >= 2; Layout.fillWidth: true }
-                                ConfirmBtn { label: "Позиция"; cmd: "position"; highlighted: s.modeCode === 4; enabled: s.stateCode >= 2; Layout.fillWidth: true }
+                                ConfirmBtn { label: "Ожидание"; cmd: "standby"; highlighted: s.modeCode === 0; implicitHeight: 32; Layout.fillWidth: true }
+                                ConfirmBtn { label: "Курс"; cmd: "heading"; highlighted: s.modeCode === 3; enabled: s.stateCode >= 2; implicitHeight: 32; Layout.fillWidth: true }
+                                ConfirmBtn { label: "Позиция"; cmd: "position"; highlighted: s.modeCode === 4; enabled: s.stateCode >= 2; implicitHeight: 32; Layout.fillWidth: true }
                             }
                             RowLayout {
                                 spacing: 6
-                                Btn { text: "Взять все движители"; enabled: s.hasShip === true; onClicked: core.command("thr_take all"); Layout.fillWidth: true }
-                                ConfirmBtn { label: "Снять все"; cmd: "thr_release all"; enabled: s.hasShip === true; Layout.fillWidth: true }
+                                Btn { text: "Взять все движители"; enabled: s.hasShip === true; onClicked: core.command("thr_take all"); implicitHeight: 32; Layout.fillWidth: true }
+                                ConfirmBtn { label: "Снять все"; cmd: "thr_release all"; enabled: s.hasShip === true; implicitHeight: 32; Layout.fillWidth: true }
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: 6
+                                Caption { text: "Усиление"; Layout.fillWidth: true }
+                                ConfirmBtn { label: "Низкое"; cmd: "gain low"; highlighted: s.gainHigh !== true; enabled: s.hasShip === true; implicitHeight: 32; Layout.fillWidth: true }
+                                ConfirmBtn { label: "Высокое"; cmd: "gain high"; highlighted: s.gainHigh === true; enabled: s.hasShip === true; implicitHeight: 32; Layout.fillWidth: true }
                             }
                             Btn { text: "Держать здесь (не возвращаться в точку)"; visible: s.modeCode === 4 && win.posLossOrReturn; Layout.fillWidth: true
                                   palette.button: Theme.warn; palette.buttonText: Theme.bg; font.bold: true; onClicked: core.command("here") }
@@ -481,6 +487,11 @@ ApplicationWindow {
                             ComboBox { model: ["1 м", "5 м", "10 м"]; onActivated: step = [1, 5, 10][currentIndex]; Layout.columnSpan: 3; Layout.fillWidth: true }
                             Btn { text: "Точка = здесь"; implicitHeight: 32; Layout.columnSpan: 2; Layout.fillWidth: true
                                   onClicked: core.command("set " + s.n.toFixed(2) + " " + s.e.toFixed(2) + " " + s.hdg.toFixed(1)) }
+                            Label {
+                                Layout.columnSpan: 5; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.dim; font.pixelSize: Theme.fsSmall
+                                text: "Центр: " + (Math.abs(s.pivotX || 0) < 0.05 && Math.abs(s.pivotY || 0) < 0.05 ? "мидель" : Theme.num(Math.abs(s.pivotX || 0), 1) + " м " + ((s.pivotX || 0) >= 0 ? "к носу" : "к корме") + ", " + Theme.num(Math.abs(s.pivotY || 0), 1) + " м " + ((s.pivotY || 0) >= 0 ? "к ПрБ" : "к ЛБ"))
+                                      + " · пределы: поворот " + ((s.rateRotDegMin || 0) > 0 ? Theme.num(s.rateRotDegMin, 1) + " °/мин" : "нет") + ", скорость " + ((s.rateSpeedKn || 0) > 0 ? Theme.num(s.rateSpeedKn, 2) + " уз" : "нет")
+                            }
                         }
                     }
                 }
@@ -1131,6 +1142,50 @@ ApplicationWindow {
                                        onToggled: prefs.onboard = checked; font.pixelSize: Theme.fs; Layout.fillWidth: true }
                             Label { color: Theme.dim; font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true
                                     text: "В бортовом режиме кнопки запуска и остановки имитатора и метка «ИМИТАЦИЯ» не показываются (дорожная карта, этап 1, п. 9)." }
+                            Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+                            Caption { text: "Параметры управления" }
+                            Label {
+                                Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.text; font.pixelSize: Theme.fsSmall
+                                text: "Сейчас: " + (Math.abs(s.pivotX || 0) < 0.05 && Math.abs(s.pivotY || 0) < 0.05 ? "центр — мидель" : "центр " + Theme.num(Math.abs(s.pivotX || 0), 1) + " м " + ((s.pivotX || 0) >= 0 ? "к носу" : "к корме") + ", " + Theme.num(Math.abs(s.pivotY || 0), 1) + " м " + ((s.pivotY || 0) >= 0 ? "к ПрБ" : "к ЛБ"))
+                                      + "\nУсиление: " + (s.gainHigh === true ? "высокое (×" + Theme.num(s.gainHighK || 0, 2) + ")" : "низкое")
+                                      + "\nПределы: поворот " + ((s.rateRotDegMin || 0) > 0 ? Theme.num(s.rateRotDegMin, 1) + " °/мин" : "нет") + ", скорость " + ((s.rateSpeedKn || 0) > 0 ? Theme.num(s.rateSpeedKn, 2) + " уз" : "нет")
+                            }
+                            Label { text: "Точка из книги судна"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+                            ComboBox {
+                                id: pivotPresetBox; Layout.fillWidth: true; implicitHeight: 32; textRole: "name"; font.pixelSize: Theme.fsSmall
+                                model: [{name: "Мидель", x: 0, y: 0}].concat(core.hull.pivotPresets || [])
+                                onActivated: {
+                                    const p = model[currentIndex]
+                                    pivotXIn.text = String(p.x).replace(".", ",")
+                                    pivotYIn.text = String(p.y).replace(".", ",")
+                                }
+                            }
+                            GridLayout {
+                                columns: 2; columnSpacing: 8; rowSpacing: 5; Layout.fillWidth: true
+                                Label { text: "Вдоль, м (+ нос)"; color: Theme.text; font.pixelSize: Theme.fsSmall; Layout.fillWidth: true }
+                                TextField { id: pivotXIn; text: "0"; implicitWidth: 100; implicitHeight: 30; font.family: Theme.mono }
+                                Label { text: "Поперёк, м (+ ПрБ)"; color: Theme.text; font.pixelSize: Theme.fsSmall; Layout.fillWidth: true }
+                                TextField { id: pivotYIn; text: "0"; implicitWidth: 100; implicitHeight: 30; font.family: Theme.mono }
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: 6
+                                ConfirmBtn { label: "Применить центр"; cmd: "pivot " + pivotXIn.text.replace(",", ".") + " " + pivotYIn.text.replace(",", "."); enabled: s.hasShip === true; implicitHeight: 32; Layout.fillWidth: true }
+                                ConfirmBtn { label: "Мидель"; cmd: "pivot 0 0"; enabled: s.hasShip === true; implicitHeight: 32; Layout.fillWidth: true }
+                            }
+                            Label { text: "Допустимо: вдоль ±300 м, поперёк ±100 м. Ядро отклоняет значения вне пределов."; color: Theme.dim; font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                            GridLayout {
+                                columns: 2; columnSpacing: 8; rowSpacing: 5; Layout.fillWidth: true
+                                Label { text: "Поворот, °/мин"; color: Theme.text; font.pixelSize: Theme.fsSmall; Layout.fillWidth: true }
+                                TextField { id: rotRateIn; text: "0"; implicitWidth: 100; implicitHeight: 30; font.family: Theme.mono }
+                                Label { text: "Скорость, уз"; color: Theme.text; font.pixelSize: Theme.fsSmall; Layout.fillWidth: true }
+                                TextField { id: speedRateIn; text: "0"; implicitWidth: 100; implicitHeight: 30; font.family: Theme.mono }
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: 6
+                                ConfirmBtn { label: "Задать поворот"; cmd: "rate rot " + rotRateIn.text.replace(",", "."); enabled: s.hasShip === true; implicitHeight: 32; Layout.fillWidth: true }
+                                ConfirmBtn { label: "Задать скорость"; cmd: "rate speed " + speedRateIn.text.replace(",", "."); enabled: s.hasShip === true; implicitHeight: 32; Layout.fillWidth: true }
+                            }
+                            Label { text: "0 — без ограничения. Поворот: 0,5…600 °/мин; скорость: 0,05…30 уз. Каждая команда требует повторного нажатия."; color: Theme.dim; font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true }
                             Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
                             Caption { text: "О программе" }
                             Label { text: "Пульт оператора СДП. Ядро в том же процессе. Изменение пределов и параметров судна — только через книгу судна с правами администратора."
