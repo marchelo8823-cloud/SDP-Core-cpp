@@ -113,8 +113,14 @@ void HmiCore::refresh() {
     m["roll"] = rad2deg(es.roll); m["pitch"] = rad2deg(es.pitch); m["heave"] = es.heave;
     m["waveHs"] = es.wave.valid ? es.wave.hs : -1.0;
     if (core_.simRunning()) { auto* sim = core_.sim(); const auto& tr = sim->truth(); m["trueN"] = tr.n; m["trueE"] = tr.e; }
-    // анализ последствий отказа: класс, был ли расчёт, запас по группам наихудшего отказа
+    // Параметры управления и анализ последствий отказа — только показ существующего состояния ядра.
+    m["pivotX"] = 0.0; m["pivotY"] = 0.0; m["gainHigh"] = false; m["gainHighK"] = 1.0;
+    m["rateRotDegMin"] = 0.0; m["rateSpeedKn"] = 0.0;                 // 0 — ограничение оператора выключено
     if (DpEngine* eng = core_.engine()) {
+        const Controller& ct = eng->controller();
+        m["pivotX"] = ct.pivotX(); m["pivotY"] = ct.pivotY();
+        m["gainHigh"] = ct.cfg().highGain; m["gainHighK"] = ct.cfg().gainHighK;
+        m["rateRotDegMin"] = ct.capRot() * 60.0; m["rateSpeedKn"] = ct.capSpeed() / 0.514444;
         const Consequence& ca = eng->consequence();
         m["caClass"] = ca.dpClass(); m["caRan"] = ca.ran(); m["caAge"] = ca.ran() ? core_.clock() - ca.lastRunT() : -1.0; m["caSingle"] = ca.singleFailures();
         QVariantList gl; bool bad = false;
@@ -211,6 +217,8 @@ void HmiCore::refresh() {
         h["length"] = cfg->vessel.length; h["beam"] = cfg->vessel.beam;
         QVariantList hs; for (const auto& t : cfg->thrusters) { QVariantMap x; x["id"] = QString::fromStdString(t.id); x["x"] = t.x; x["y"] = t.y; x["azimuth"] = t.type == ThrusterType::Azimuth; hs.push_back(x); }
         h["thrusters"] = hs;
+        QVariantList ps; for (const auto& p : cfg->pivotPresets) { QVariantMap x; x["name"] = QString::fromStdString(p.name); x["x"] = p.x; x["y"] = p.y; ps.push_back(x); }
+        h["pivotPresets"] = ps;                                 // именованные точки из книги судна, только для выбора на пульте
     }
     if (h != hull_) { hull_ = h; emit shipChanged(); }
     emit changed();

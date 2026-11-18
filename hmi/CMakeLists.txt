@@ -18,6 +18,13 @@ if(NOT WIN32)
            --run 20 --cmd "thr_take all" --cmd position --run 30 --workspace maneuver --size 1366x768 --screenshot ${CMAKE_BINARY_DIR}/hmi_workspace.png
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
   set_tests_properties(hmi_workspace PROPERTIES TIMEOUT 120)
+  # pivot/rate и двойное подтверждение усиления: команды доходят до ядра, компоновка сохраняется на 1366×768
+  add_test(NAME hmi_control COMMAND ${CMAKE_COMMAND} -E env QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
+           $<TARGET_FILE:sdp_hmi> --ship ${CMAKE_SOURCE_DIR}/data/Данные_судна_пример.xlsx --sim ${CMAKE_SOURCE_DIR}/tests/scenarios/имитатор_быстро.xlsx
+           --run 20 --cmd "thr_take all" --cmd position --run 30 --cmd "pivot 12 3" --cmd "rate rot 12" --cmd "rate speed 1.5"
+           --press "Высокое" --press "Высокое" --size 1366x768 --screenshot ${CMAKE_BINARY_DIR}/hmi_control.png
+           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+  set_tests_properties(hmi_control PROPERTIES TIMEOUT 120)
   # подтверждение смены режима (РС ч. XV 8.5.7): одно нажатие «Ожидание» режим не снимает, второе подряд — снимает
   foreach(n 1 2)
     set(pr "")
