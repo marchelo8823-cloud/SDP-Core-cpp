@@ -646,38 +646,154 @@ ApplicationWindow {
             }
 
             // ================================================ Возможности
-            Panel {
-                ColumnLayout {
-                    anchors.fill: parent; anchors.margins: 12; spacing: 10
-                    Caption { text: "Запас возможностей: требуемое ядром усилие против предела движителей" }
-                    GridLayout {
-                        Layout.fillWidth: true; columns: 4; columnSpacing: 12; rowSpacing: 10
-                        Repeater {
-                            model: [
-                                { name: "Продольное усилие", tau: Math.abs(s.tauX || 0) / 1000, cap: (s.capX || 0) / 1000, unit: "кН" },
-                                { name: "Поперечное усилие", tau: Math.abs(s.tauY || 0) / 1000, cap: (s.capY || 0) / 1000, unit: "кН" },
-                                { name: "Момент на курс", tau: Math.abs(s.tauN || 0) / 1000, cap: (s.capN || 0) / 1000, unit: "кН·м" }
-                            ]
-                            delegate: RowLayout {
-                                Layout.fillWidth: true; Layout.columnSpan: 4; spacing: 10
-                                Label { text: modelData.name; color: Theme.text; Layout.preferredWidth: 190 }
-                                Rectangle {
-                                    Layout.fillWidth: true; implicitHeight: 18; radius: 2; color: Theme.bg; border.color: Theme.line
-                                    Rectangle {
-                                        readonly property real p: modelData.cap > 0 ? Math.min(1, modelData.tau / modelData.cap) : 0
-                                        width: p * parent.width; height: parent.height; radius: 2
-                                        color: p > 0.9 ? Theme.warn : Theme.accent
-                                    }
+            RowLayout {
+                spacing: 6
+                // Полярная диаграмма (capability plot): предельный и рабочий (80 % упора) ветер по направлениям от носа,
+                // «Все движители» + отказ каждого; фиолетовая точка — текущий ветер. Как Capability plot в K-Pos.
+                Panel {
+                    Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredWidth: 3
+                    Canvas {
+                        id: capCv
+                        anchors.fill: parent
+                        property var curves: core.capCurves
+                        property bool showFail: failChk.checked
+                        property var st: win.s
+                        onCurvesChanged: requestPaint()
+                        onStChanged: requestPaint()
+                        onShowFailChanged: requestPaint()
+                        onWidthChanged: requestPaint()
+                        onHeightChanged: requestPaint()
+                        Connections { target: Theme; function onSchemeChanged() { capCv.requestPaint() } }
+                        onPaint: {
+                            const g = getContext("2d"); g.reset()
+                            if (width < 100 || height < 100) return                     // промежуточный размер при создании окна
+                            const cx = width / 2, cy = height / 2 + 6, R = Math.min(width, height) / 2 - 46
+                            const maxV = 40.0                                            // шкала, м/с
+                            g.strokeStyle = Theme.grid; g.lineWidth = 1
+                            g.fillStyle = Theme.dim; g.font = "12px '" + Theme.font + "'"
+                            for (let v = 10; v <= 40; v += 10) {                          // кольца 10/20/30/40 м/с
+                                g.beginPath(); g.arc(cx, cy, R * v / maxV, 0, 2 * Math.PI); g.stroke()
+                                g.textAlign = "left"; g.fillText(v + " м/с", cx + R * v / maxV * 0.707 + 4, cy - R * v / maxV * 0.707 - 2)
+                            }
+                            g.textAlign = "center"
+                            for (let a = 0; a < 360; a += 30) {                           // спицы через 30°
+                                const r = a * Math.PI / 180, sx = Math.sin(r), sy = Math.cos(r)
+                                g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + sx * R, cy - sy * R); g.stroke()
+                                g.fillText(a + "°", cx + sx * (R + 20), cy - sy * (R + 20) + 4)
+                            }
+                            g.fillStyle = Theme.text; g.font = "bold 14px '" + Theme.font + "'"
+                            g.fillText("нос", cx, cy - R - 30)
+                            if (!curves || curves.length === 0) {
+                                g.fillStyle = Theme.dim; g.font = "14px '" + Theme.font + "'"
+                                g.fillText("Нажмите «Рассчитать возможности»", cx, cy)
+                                return
+                            }
+                            const pt = (dir, v) => [cx + Math.sin(dir * Math.PI / 180) * Math.min(v, maxV) / maxV * R,
+                                                    cy - Math.cos(dir * Math.PI / 180) * Math.min(v, maxV) / maxV * R]
+                            const path = (cv, key) => {
+                                g.beginPath()
+                                const n = cv.dirs.length
+                                for (let i = 0; i <= n; ++i) {
+                                    const p = pt(cv.dirs[i % n], cv[key][i % n])
+                                    if (i === 0) g.moveTo(p[0], p[1]); else g.lineTo(p[0], p[1])
                                 }
-                                Label { text: Theme.num(modelData.tau, 1) + " / " + Theme.num(modelData.cap, 1) + " " + modelData.unit; color: Theme.text; font.family: Theme.mono; Layout.preferredWidth: 190 }
-                                Label { text: modelData.cap > 0 ? Theme.num(modelData.tau / modelData.cap * 100, 0) + " %" : "—"
-                                        color: modelData.cap > 0 && modelData.tau / modelData.cap > 0.9 ? Theme.warn : Theme.dim; font.family: Theme.mono }
+                                g.closePath()
+                            }
+                            if (showFail) for (let i = curves.length - 1; i >= 1; --i) {  // отказы — тонкие жёлтые
+                                path(curves[i], "limit"); g.strokeStyle = Theme.warn; g.lineWidth = 1; g.stroke()
+                            }
+                            const all = curves[0]
+                            path(all, "limit"); g.globalAlpha = 0.14; g.fillStyle = Theme.accent; g.fill(); g.globalAlpha = 1
+                            g.strokeStyle = Theme.accent; g.lineWidth = 2; g.stroke()
+                            path(all, "work"); g.strokeStyle = Theme.ok; g.lineWidth = 2; g.stroke()
+                            if (st.windValid) {                                           // текущий ветер
+                                const p = pt(st.windFromRel || 0, st.windSpeed || 0)
+                                g.fillStyle = Theme.wind; g.beginPath(); g.arc(p[0], p[1], 6, 0, 2 * Math.PI); g.fill()
+                                g.strokeStyle = Theme.bg; g.lineWidth = 1.5; g.stroke()
+                                g.fillStyle = Theme.wind; g.font = "12px '" + Theme.font + "'"; g.textAlign = "left"
+                                g.fillText("сейчас " + Theme.num(st.windSpeed, 1) + " м/с", p[0] + 9, p[1] - 6)
+                            }
+                            g.textAlign = "left"; g.font = "12px '" + Theme.font + "'"     // легенда
+                            g.fillStyle = Theme.accent; g.fillText("— предел (полный упор)", 12, height - 34)
+                            g.fillStyle = Theme.ok; g.fillText("— рабочий (80 % упора)", 12, height - 18)
+                            if (showFail) { g.fillStyle = Theme.warn; g.fillText("— отказы движителей", 220, height - 18) }
+                        }
+                    }
+                }
+                ColumnLayout {
+                    Layout.fillHeight: true; Layout.preferredWidth: 470; Layout.maximumWidth: 470; spacing: 6
+                    // Окно условий среды (как DP Capability Settings в K-Pos): течение, волны по ветру, граница поиска
+                    Panel {
+                        Layout.fillWidth: true; Layout.preferredHeight: 240
+                        ColumnLayout {
+                            anchors.fill: parent; anchors.margins: 10; spacing: 6
+                            Caption { text: "Условия расчёта: ветер, волна и течение — с одного направления"; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                            GridLayout {
+                                columns: 2; columnSpacing: 10; rowSpacing: 4; Layout.fillWidth: true
+                                Label { text: "Течение, м/с"; color: Theme.text; font.pixelSize: Theme.fsSmall }
+                                TextField { id: curIn; text: "0,0"; Layout.preferredWidth: 90; font.family: Theme.mono; implicitHeight: 30 }
+                                Label { text: "Волны"; color: Theme.text; font.pixelSize: Theme.fsSmall }
+                                CheckBox { id: wavesChk; checked: true; text: "по ветру (Hs = 0,0246·V²)"; font.pixelSize: Theme.fsSmall }
+                                Label { text: "Ветер max поиска, м/с"; color: Theme.text; font.pixelSize: Theme.fsSmall }
+                                TextField { id: maxIn; text: "40"; Layout.preferredWidth: 90; font.family: Theme.mono; implicitHeight: 30 }
+                            }
+                            Btn { text: "Рассчитать возможности"; enabled: s.hasShip === true; implicitHeight: 34
+                                  onClicked: core.capRun(Number(curIn.text.replace(",", ".")) || 0, wavesChk.checked, Number(maxIn.text.replace(",", ".")) || 40) }
+                            Label { text: core.capInfo || "Расчёта ещё не было. По средним силам, курс постоянный — оценка по модели ядра, не по правилам РС."
+                                    color: Theme.dim; font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                            Label { text: "Сейчас: " + (s.windValid ? "ветер " + Theme.num(s.windSpeed, 1) + " м/с с " + Theme.num(s.windFromRel, 0) + "° от носа" : "ветра нет") + (s.waveHs >= 0 ? ", Hs " + Theme.num(s.waveHs, 1) + " м" : "")
+                                    color: Theme.text; font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                        }
+                    }
+                    Panel {
+                        Layout.fillWidth: true; Layout.fillHeight: true
+                        ColumnLayout {
+                            anchors.fill: parent; anchors.margins: 10; spacing: 4
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Caption { text: "Сценарии: наименьший предел / рабочий"; Layout.fillWidth: true }
+                                CheckBox { id: failChk; checked: true; text: "отказы"; font.pixelSize: Theme.fsSmall }
+                            }
+                            ListView {
+                                Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 3
+                                model: core.capCurves
+                                delegate: RowLayout {
+                                    width: ListView.view.width; spacing: 8
+                                    Rectangle { implicitWidth: 10; implicitHeight: 10; color: index === 0 ? Theme.accent : Theme.warn; radius: 2 }
+                                    Label { text: modelData.name; color: Theme.text; font.pixelSize: Theme.fsSmall; Layout.fillWidth: true; elide: Text.ElideRight }
+                                    Label { text: Theme.num(modelData.minLimit, 1) + " / " + Theme.num(modelData.minWork, 1) + " м/с"; color: Theme.text; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
+                                }
                             }
                         }
                     }
-                    Label { text: "Полярная диаграмма возможностей по ветру — в планах (дорожная карта, этап 1): в ядре есть, на пульт ещё не выведена."
-                            color: Theme.dim; font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true }
-                    Item { Layout.fillHeight: true }
+                    Panel {
+                        Layout.fillWidth: true; Layout.preferredHeight: 118
+                        ColumnLayout {
+                            anchors.fill: parent; anchors.margins: 10; spacing: 6
+                            Caption { text: "Запас по осям: требуемое усилие / предел" }
+                            Repeater {
+                                model: [
+                                    { name: "Продольное", tau: Math.abs(s.tauX || 0) / 1000, cap: (s.capX || 0) / 1000, unit: "кН" },
+                                    { name: "Поперечное", tau: Math.abs(s.tauY || 0) / 1000, cap: (s.capY || 0) / 1000, unit: "кН" },
+                                    { name: "Момент", tau: Math.abs(s.tauN || 0) / 1000, cap: (s.capN || 0) / 1000, unit: "кН·м" }
+                                ]
+                                delegate: RowLayout {
+                                    Layout.fillWidth: true; spacing: 8
+                                    Label { text: modelData.name; color: Theme.text; font.pixelSize: Theme.fsSmall; Layout.preferredWidth: 86 }
+                                    Rectangle {
+                                        Layout.fillWidth: true; implicitHeight: 12; radius: 2; color: Theme.bg; border.color: Theme.line
+                                        Rectangle {
+                                            readonly property real p: modelData.cap > 0 ? Math.min(1, modelData.tau / modelData.cap) : 0
+                                            width: p * parent.width; height: parent.height; radius: 2
+                                            color: p > 0.9 ? Theme.warn : Theme.accent
+                                        }
+                                    }
+                                    Label { text: modelData.cap > 0 ? Theme.num(modelData.tau / modelData.cap * 100, 0) + " %" : "—"
+                                            color: modelData.cap > 0 && modelData.tau / modelData.cap > 0.9 ? Theme.warn : Theme.dim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

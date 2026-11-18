@@ -38,6 +38,30 @@ void HmiCore::simStart(const QString& p) { command("sim start " + QString::fromS
 void HmiCore::ack() { core_.alarms().ack(core_.clock()); refresh(); }                    // квитирование через менеджер ядра: попадает и в журнал событий
 void HmiCore::ackCode(const QString& c) { core_.alarms().ack(core_.clock(), c.toStdString()); refresh(); }   // по одной тревоге
 
+// Диаграмма возможностей: «Все движители» и отказ каждого — предельный и рабочий (80 % упора) ветер по 36 направлениям.
+// Расчёт по средним силам, курс постоянный, ветер/волна/течение с одного направления — оценка по модели ядра, не по правилам РС.
+void HmiCore::capRun(double currentMS, bool wavesWithWind, double maxWindMS) {
+    if (!core_.hasShip()) { capInfo_ = "Сначала загрузите судно"; emit capChanged(); return; }
+    CapEnv e;
+    e.currentMS = std::clamp(currentMS, 0.0, 5.0);
+    e.maxWindMS = std::clamp(maxWindMS, 5.0, 60.0);
+    e.wavesWithWind = wavesWithWind;
+    const auto sc = capScenarios(*core_.ship(), e);
+    QVariantList out;
+    for (const auto& cv : sc) {
+        QVariantMap x; x["name"] = QString::fromStdString(cv.name);
+        QVariantList d, l, w;
+        for (size_t i = 0; i < cv.dirDeg.size(); ++i) { d.push_back(cv.dirDeg[i]); l.push_back(cv.limitMS[i]); w.push_back(cv.workMS[i]); }
+        x["dirs"] = d; x["limit"] = l; x["work"] = w;
+        x["minLimit"] = cv.minLimit(); x["minWork"] = cv.minWork();
+        out.push_back(x);
+    }
+    cap_ = out;
+    capInfo_ = QString("Течение %1 м/с · %2 · шаг 10° · рассчитано t = %3 с")
+        .arg(e.currentMS, 0, 'f', 1).arg(wavesWithWind ? "волны по ветру (Hs = 0,0246·V²)" : "без волн").arg(core_.clock(), 0, 'f', 0);
+    emit capChanged();
+}
+
 void HmiCore::tick() {
     if (paused_) return;
     const int n = std::max(1, static_cast<int>(std::lround(core_.simSpeed())));   // ускорение имитатора: столько циклов за 0,1 с
