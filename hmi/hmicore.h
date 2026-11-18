@@ -18,6 +18,8 @@ class HmiCore : public QObject {
     Q_PROPERTY(QVariantList track READ track NOTIFY changed)       // след судна: [n, e, n, e, …] за последние минуты
     Q_PROPERTY(QVariantMap hull READ hull NOTIFY shipChanged)     // корпус для рисования: длина, ширина, движители и датчики на корпусе
     Q_PROPERTY(QStringList log READ log NOTIFY logChanged)
+    Q_PROPERTY(QVariantList capCurves READ capCurves NOTIFY capChanged)   // диаграмма возможностей: сценарии с предельным/рабочим ветром по направлениям
+    Q_PROPERTY(QString capInfo READ capInfo NOTIFY capChanged)            // условия последнего расчёта возможностей
 public:
     explicit HmiCore(QObject* parent = nullptr);
     QVariantMap s() const { return s_; }
@@ -27,12 +29,16 @@ public:
     QVariantList track() const { return trk_; }
     QVariantMap hull() const { return hull_; }
     QStringList log() const { return log_; }
+    QVariantList capCurves() const { return cap_; }
+    QString capInfo() const { return capInfo_; }
 
     Q_INVOKABLE void command(const QString& line);              // любая команда ядра (как в sdp_run)
     Q_INVOKABLE void loadShip(const QString& pathOrUrl);
     Q_INVOKABLE void simStart(const QString& pathOrUrl);
     Q_INVOKABLE void ack();                                       // квитирование всех тревог (через менеджер ядра)
     Q_INVOKABLE void ackCode(const QString& code);                // квитирование одной тревоги по коду
+    // Диаграмма возможностей (capability plot): расчёт по кнопке, не каждый цикл (тяжёлый перебор направлений).
+    Q_INVOKABLE void capRun(double currentMS, bool wavesWithWind, double maxWindMS);
     void runFor(double seconds);                                  // прогнать ядро без реального времени (для проверок и снимков)
     void setPaused(bool p) { paused_ = p; }
 
@@ -40,6 +46,7 @@ signals:
     void changed();
     void shipChanged();
     void logChanged();
+    void capChanged();
 
 private:
     void tick();
@@ -53,6 +60,8 @@ private:
     QVariantMap s_, hull_;
     QVariantList thr_, sen_, alm_, trk_;
     QStringList log_;
+    QVariantList cap_;
+    QString capInfo_;
     std::deque<std::pair<double, double>> trail_;
     double lastTrail_ = -1e9;
 };
