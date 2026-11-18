@@ -12,6 +12,12 @@ if(NOT WIN32)
            --run 20 --cmd "thr_take all" --cmd position --run 120 --screenshot ${CMAKE_BINARY_DIR}/hmi_smoke.png
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
   set_tests_properties(hmi_smoke PROPERTIES TIMEOUT 120)
+  # готовый набор рабочего места: панели переставляются по ячейкам без ошибок QML на 1366×768
+  add_test(NAME hmi_workspace COMMAND ${CMAKE_COMMAND} -E env QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
+           $<TARGET_FILE:sdp_hmi> --ship ${CMAKE_SOURCE_DIR}/data/Данные_судна_пример.xlsx --sim ${CMAKE_SOURCE_DIR}/tests/scenarios/имитатор_быстро.xlsx
+           --run 20 --cmd "thr_take all" --cmd position --run 30 --workspace maneuver --size 1366x768 --screenshot ${CMAKE_BINARY_DIR}/hmi_workspace.png
+           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+  set_tests_properties(hmi_workspace PROPERTIES TIMEOUT 120)
   # подтверждение смены режима (РС ч. XV 8.5.7): одно нажатие «Ожидание» режим не снимает, второе подряд — снимает
   foreach(n 1 2)
     set(pr "")

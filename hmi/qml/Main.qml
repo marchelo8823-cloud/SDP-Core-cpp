@@ -28,15 +28,110 @@ ApplicationWindow {
     property real step: 1.0          // шаг сдвига точки, м
     property real hstep: 1.0         // шаг курса, °
 
-    // настройки пульта (хранятся): палитра и бортовой режим; cliPalette/cliOnboard — временный override для снимков, в настройки не пишется
-    Settings { id: prefs; property string palette: "night"; property bool onboard: false }
+    // Настройки пульта (хранятся): палитра, бортовой режим и раскладки рабочих мест.
+    // cli* — временные override для проверок и снимков, в настройки не пишутся.
+    Settings {
+        id: prefs
+        property string palette: "night"; property bool onboard: false
+        property string workspaceLayout: '["plan","hdg","mode","move","env","dev","power","ca"]'
+        property string workspaceName: "Полный"
+        property string stationLayout: ""; property string operatorLayout: ""
+        property real devLimit: 5.0
+    }
     Binding { target: Theme; property: "scheme"; value: cliPalette !== "" ? cliPalette : prefs.palette }
     readonly property bool onboard: cliOnboard || prefs.onboard
 
     FileDialog { id: shipDlg; title: "Книга данных судна"; nameFilters: ["Книги Excel (*.xlsx)"]; onAccepted: core.loadShip(selectedFile) }
     FileDialog { id: simDlg; title: "Книга имитатора"; nameFilters: ["Книги Excel (*.xlsx)"]; onAccepted: core.simStart(selectedFile) }
 
+    // Своё рабочее место: 8 ячеек главного экрана. Порядок id — левый план, три средние и четыре правые ячейки.
+    // Режим нельзя скрыть; шапка состояния и строка тревог находятся вне настраиваемой сетки и присутствуют всегда.
+    readonly property var workspaceIds: ["plan", "hdg", "mode", "move", "env", "dev", "power", "ca"]
+    readonly property var workspaceNames: ["План положения", "Курс и скорость", "Режим", "Сдвиг точки и курса", "Среда и загрузка", "Отклонение позиции", "Потребление мощности", "Анализ последствий"]
+    readonly property var workspaceChoiceIds: workspaceIds.concat(["none"])
+    readonly property var workspaceChoiceNames: workspaceNames.concat(["Пусто"])
+    readonly property var defaultWorkspace: ["plan", "hdg", "mode", "move", "env", "dev", "power", "ca"]
+    property int workspaceRev: 0
+    property string workspaceNotice: ""
+    readonly property real deviationLimit: Math.max(0.5, Math.min(50, prefs.devLimit))
+    function presetWorkspace(name) {
+        if (name === "watch") return ["plan", "hdg", "mode", "env", "dev", "power", "ca", "none"]
+        if (name === "maneuver") return ["plan", "mode", "move", "hdg", "env", "dev", "none", "ca"]
+        return defaultWorkspace.slice()
+    }
+    function normalizedWorkspace(a) {
+        if (!a || a.length !== 8) return defaultWorkspace.slice()
+        const seen = {}
+        for (const id of a) {
+            if (id === "none") continue
+            if (workspaceIds.indexOf(id) < 0 || seen[id]) return defaultWorkspace.slice()
+            seen[id] = true
+        }
+        return seen.mode ? a : defaultWorkspace.slice()
+    }
+    readonly property var activeWorkspace: {
+        workspaceRev
+        if (cliWorkspace !== "") return presetWorkspace(cliWorkspace)
+        try { return normalizedWorkspace(JSON.parse(prefs.workspaceLayout)) }
+        catch (e) { return defaultWorkspace.slice() }
+    }
+    readonly property string activeWorkspaceName: cliWorkspace === "watch" ? "Наблюдение" : cliWorkspace === "maneuver" ? "Манёвры" : cliWorkspace === "full" ? "Полный" : prefs.workspaceName
+    function applyWorkspace() {
+        if (!plan || !cell0) return
+        const cells = [cell0, cell1, cell2, cell3, cell4, cell5, cell6, cell7]
+        const panels = [plan, hdgPanel, modePanel, movePanel, envPanel, devPanel, powerPanel, caPanel]
+        for (const p of panels) p.visible = false
+        const layout = activeWorkspace
+        for (let i = 0; i < cells.length; ++i) {
+            cells[i].empty = layout[i] === "none"
+            if (layout[i] === "none") continue
+            const p = panels[workspaceIds.indexOf(layout[i])]
+            p.parent = cells[i]; p.anchors.fill = cells[i]; p.visible = true
+        }
+    }
+    function setWorkspace(layout, name) {
+        const a = normalizedWorkspace(layout)
+        prefs.workspaceLayout = JSON.stringify(a); prefs.workspaceName = name
+        workspaceNotice = "Применён набор: " + name; workspaceRev++
+    }
+    function usePreset(name) {
+        setWorkspace(presetWorkspace(name), name === "watch" ? "Наблюдение" : name === "maneuver" ? "Манёвры" : "Полный")
+    }
+    function setCellPanel(cellIndex, panelId) {
+        const a = activeWorkspace.slice(), old = a[cellIndex]
+        if (old === panelId) return
+        if (old === "mode" && panelId === "none") {
+            workspaceNotice = "Панель «Режим» обязательна и не скрывается"; workspaceRev++; return
+        }
+        if (panelId !== "none") {
+            const other = a.indexOf(panelId)
+            if (other >= 0) a[other] = old                  // повторов нет: панели меняются ячейками
+        }
+        a[cellIndex] = panelId
+        setWorkspace(a, "Свой набор")
+    }
+    function saveWorkspace(kind) {
+        if (kind === "station") prefs.stationLayout = prefs.workspaceLayout
+        else prefs.operatorLayout = prefs.workspaceLayout
+        workspaceNotice = kind === "station" ? "Текущая раскладка сохранена для поста" : "Текущая раскладка сохранена для оператора"
+    }
+    function applySavedWorkspace(kind) {
+        const raw = kind === "station" ? prefs.stationLayout : prefs.operatorLayout
+        if (!raw) return
+        try { setWorkspace(JSON.parse(raw), kind === "station" ? "Пост" : "Оператор") }
+        catch (e) { workspaceNotice = "Сохранённая раскладка повреждена — выберите готовый набор" }
+    }
+    Component.onCompleted: applyWorkspace()
+    onActiveWorkspaceChanged: Qt.callLater(applyWorkspace)
+
     component Panel: Rectangle { color: Theme.panel; radius: 3; clip: true }
+    component WorkspaceCell: Item {
+        property bool empty: false
+        Rectangle {
+            z: -1; anchors.fill: parent; visible: parent.empty; color: Theme.panel; radius: 3; border.color: Theme.line
+            Label { anchors.centerIn: parent; text: "Пустая ячейка"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+        }
+    }
     component Caption: Label { color: Theme.dim; font.pixelSize: Theme.fsSmall; font.capitalization: Font.AllUppercase; font.letterSpacing: 1 }
     component Big: Label { color: Theme.text; font.pixelSize: Theme.fsBig; font.family: Theme.mono }
     component Btn: Button { font.pixelSize: Theme.fs; implicitHeight: 40 }
@@ -233,23 +328,28 @@ ApplicationWindow {
             Layout.fillWidth: true; Layout.fillHeight: true
             currentIndex: tabs.currentIndex
 
-            // ================================================ Главный
-            RowLayout {
-                spacing: 6
+            // ================================================ Главный: настраиваемые панели в 8 ячейках
+            GridLayout {
+                columns: 3; rows: 4; columnSpacing: 6; rowSpacing: 6
 
-                PositionView {
-                    id: plan
+                WorkspaceCell {
+                    id: cell0
+                    Layout.row: 0; Layout.column: 0; Layout.rowSpan: 4
                     Layout.fillHeight: true; Layout.fillWidth: true; Layout.preferredWidth: 820; Layout.minimumWidth: 460
-                    s: core.s; hull: core.hull; thrusters: core.thrusters; track: core.track
+                    PositionView {
+                        id: plan; anchors.fill: parent
+                        s: core.s; hull: core.hull; thrusters: core.thrusters; track: core.track
+                    }
                 }
 
-                ColumnLayout {
-                    Layout.fillHeight: true; Layout.fillWidth: false; Layout.preferredWidth: 470; Layout.maximumWidth: 470; spacing: 6
+                WorkspaceCell {
+                    id: cell1
+                    Layout.row: 0; Layout.column: 1
+                    Layout.fillHeight: true; Layout.fillWidth: true; Layout.preferredWidth: 470; Layout.minimumWidth: 470; Layout.maximumWidth: 470; Layout.preferredHeight: 262
                     // Курс и скорость: курс трёхзначный, поворот с полосой ЛБ/ПрБ, скорость в узлах со стороной,
                     // отклонение от точки со стороной (где судно относительно точки).
                     Panel {
-                        id: hdgPanel
-                        Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredHeight: 262
+                        id: hdgPanel; anchors.fill: parent
                         readonly property color hc: !s.hdgValid ? Theme.alarm : s.hdgDR ? Theme.warn : Theme.text
                         readonly property real offAlong: -(s.errAlong || 0)     // судно от точки: + к носу
                         readonly property real offCross: -(s.errCross || 0)     // + к правому борту
@@ -335,8 +435,13 @@ ApplicationWindow {
                             }
                         }
                     }
+                }
+                WorkspaceCell {
+                    id: cell2
+                    Layout.row: 1; Layout.column: 1
+                    Layout.fillHeight: true; Layout.fillWidth: true; Layout.preferredWidth: 470; Layout.minimumWidth: 470; Layout.maximumWidth: 470; Layout.preferredHeight: win.posLossOrReturn ? 244 : 196
                     Panel {
-                        Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredHeight: win.posLossOrReturn ? 244 : 196
+                        id: modePanel; anchors.fill: parent
                         ColumnLayout {
                             anchors.fill: parent; anchors.margins: 10; spacing: 6
                             Caption { text: "Режим" }
@@ -357,8 +462,13 @@ ApplicationWindow {
                                     text: win.armedCmd !== "" ? "Нажмите ту же кнопку ещё раз в течение 3 с, чтобы подтвердить." : s.stateCode === 0 ? "Загрузите судно." : s.stateCode === 1 ? "Ядро ждёт курс и положение от датчиков." : s.stateCode === 2 ? "Возьмите движители и включите режим." : "Режим включён: изменения точки и курса — ниже." }
                         }
                     }
+                }
+                WorkspaceCell {
+                    id: cell3
+                    Layout.row: 2; Layout.column: 1; Layout.rowSpan: 2
+                    Layout.fillHeight: true; Layout.fillWidth: true; Layout.preferredWidth: 470; Layout.minimumWidth: 470; Layout.maximumWidth: 470; Layout.preferredHeight: 168
                     Panel {
-                        Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredHeight: 168
+                        id: movePanel; anchors.fill: parent
                         enabled: s.stateCode === 3
                         opacity: enabled ? 1 : 0.5
                         GridLayout {
@@ -376,10 +486,12 @@ ApplicationWindow {
                 }
 
                 // ------------------------------------------------ среда и анализ (кратко)
-                ColumnLayout {
-                    Layout.fillHeight: true; Layout.fillWidth: true; Layout.minimumWidth: 330; spacing: 6
+                WorkspaceCell {
+                    id: cell4
+                    Layout.row: 0; Layout.column: 2
+                    Layout.fillHeight: true; Layout.fillWidth: true; Layout.minimumWidth: 330; Layout.preferredHeight: 200
                     Panel {
-                        Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredHeight: 200
+                        id: envPanel; anchors.fill: parent
                         GridLayout {
                             anchors.fill: parent; anchors.margins: 10; columns: 2; rowSpacing: 4; columnSpacing: 12
                             Caption { text: "Ветер (откуда, от носа)" } Label { text: s.windValid ? Theme.num(s.windSpeed, 1) + " м/с (" + Theme.num(Theme.knots(s.windSpeed), 1) + " уз), " + Theme.num(s.windFromRel, 0) + "°" : "НЕТ"; color: s.windValid ? Theme.wind : Theme.warn; font.family: Theme.mono; elide: Text.ElideRight; Layout.fillWidth: true }
@@ -394,9 +506,14 @@ ApplicationWindow {
                             Caption { text: "Волнение (по МИО)" } Label { text: s.waveHs >= 0 ? Theme.num(s.waveHs, 1) + " м" : "не оценено"; color: Theme.text; font.family: Theme.mono }
                         }
                     }
-                    // Круговой индикатор отклонения: судно относительно заданной точки, нос вверх, кольцо = 5 м (как Position deviation в K-Pos)
+                }
+                // Круговой индикатор отклонения: судно относительно заданной точки, нос вверх, кольцо настраивается
+                WorkspaceCell {
+                    id: cell5
+                    Layout.row: 1; Layout.column: 2
+                    Layout.fillHeight: true; Layout.fillWidth: true; Layout.minimumWidth: 330; Layout.preferredHeight: 138
                     Panel {
-                        Layout.fillWidth: true; Layout.preferredHeight: 138
+                        id: devPanel; anchors.fill: parent
                         RowLayout {
                             anchors.fill: parent; anchors.margins: 10; spacing: 12
                             Canvas {
@@ -419,7 +536,7 @@ ApplicationWindow {
                                         g.fillText("НЕТ", cx, cy - R / 2); return
                                     }
                                     const a = -(st.errAlong || 0), c = -(st.errCross || 0)            // судно от точки: + нос / + ПрБ
-                                    const d = Math.hypot(a, c), lim = 5
+                                    const d = Math.hypot(a, c), lim = win.deviationLimit
                                     if (d > 0.05) {                                                   // сектор направления отклонения ±12°
                                         const sa = Math.atan2(c, a) - Math.PI / 2                     // экранный угол (0 = нос вверх → -y)
                                         g.globalAlpha = 0.22; g.fillStyle = d > lim ? Theme.warn : Theme.accent
@@ -436,16 +553,21 @@ ApplicationWindow {
                                 Layout.fillWidth: true; spacing: 2
                                 Caption { text: "Отклонение позиции" }
                                 Label { text: s.posValid ? Theme.num(s.errDist, 2) + " м" : "НЕТ"; font.pixelSize: 26; font.family: Theme.mono
-                                        color: !s.posValid ? Theme.alarm : s.posDR || s.errDist > 5 ? Theme.warn : Theme.text }
+                                        color: !s.posValid ? Theme.alarm : s.posDR || s.errDist > win.deviationLimit ? Theme.warn : Theme.text }
                                 Label { text: "судно " + Theme.num(Math.abs(-(s.errAlong || 0)), 1) + " м " + (-(s.errAlong || 0) >= 0 ? "к носу" : "к корме") + " · " + Theme.num(Math.abs(-(s.errCross || 0)), 1) + " м " + (-(s.errCross || 0) >= 0 ? "к ПрБ" : "к ЛБ")
                                         color: Theme.text; font.pixelSize: Theme.fsSmall; elide: Text.ElideRight; Layout.fillWidth: true }
-                                Label { text: "кольцо = 5 м, нос вверх"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+                                Label { text: "кольцо = " + Theme.num(win.deviationLimit, 1) + " м, нос вверх"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
                             }
                         }
                     }
-                    // Потребление мощности: вертикальная шкала 0…установленная + мини-тренд 15 мин (как Power consumption в K-Pos)
+                }
+                // Потребление мощности: вертикальная шкала 0…установленная + мини-тренд 15 мин (как Power consumption в K-Pos)
+                WorkspaceCell {
+                    id: cell6
+                    Layout.row: 2; Layout.column: 2
+                    Layout.fillHeight: true; Layout.fillWidth: true; Layout.minimumWidth: 330; Layout.preferredHeight: 150
                     Panel {
-                        Layout.fillWidth: true; Layout.preferredHeight: 150
+                        id: powerPanel; anchors.fill: parent
                         ColumnLayout {
                             anchors.fill: parent; anchors.margins: 10; spacing: 4
                             RowLayout {
@@ -504,8 +626,13 @@ ApplicationWindow {
                             }
                         }
                     }
+                }
+                WorkspaceCell {
+                    id: cell7
+                    Layout.row: 3; Layout.column: 2
+                    Layout.fillHeight: true; Layout.fillWidth: true; Layout.minimumWidth: 330; Layout.preferredHeight: 190
                     Panel {
-                        Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredHeight: 190
+                        id: caPanel; anchors.fill: parent
                         ColumnLayout {
                             anchors.fill: parent; anchors.margins: 10; spacing: 4
                             Caption { text: "Анализ последствий отказа" }
@@ -923,28 +1050,94 @@ ApplicationWindow {
 
             // ================================================ Настройки
             Panel {
-                ColumnLayout {
-                    anchors.fill: parent; anchors.margins: 12; spacing: 12
-                    Caption { text: "Палитра" }
-                    RowLayout {
-                        spacing: 8
-                        Repeater {
-                            model: [ ["day", "День"], ["dusk", "Сумерки"], ["night", "Ночь"] ]
-                            Btn { text: modelData[1]; implicitHeight: 32; highlighted: prefs.palette === modelData[0]
-                                  onClicked: prefs.palette = modelData[0] }
+                RowLayout {
+                    anchors.fill: parent; anchors.margins: 12; spacing: 18
+                    ScrollView {
+                        id: wsScroll; Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredWidth: 760; clip: true
+                        contentWidth: availableWidth
+                        ColumnLayout {
+                            width: wsScroll.availableWidth; spacing: 8
+                            Caption { text: "Своё рабочее место" }
+                            Label { text: "Активный набор: " + activeWorkspaceName; color: Theme.text; font.pixelSize: Theme.fs }
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: 6
+                                Btn { text: "Полный"; implicitHeight: 32; Layout.fillWidth: true; highlighted: activeWorkspaceName === "Полный"; onClicked: usePreset("full") }
+                                Btn { text: "Наблюдение"; implicitHeight: 32; Layout.fillWidth: true; highlighted: activeWorkspaceName === "Наблюдение"; onClicked: usePreset("watch") }
+                                Btn { text: "Манёвры"; implicitHeight: 32; Layout.fillWidth: true; highlighted: activeWorkspaceName === "Манёвры"; onClicked: usePreset("maneuver") }
+                            }
+                            Label { color: Theme.dim; font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true
+                                    text: "Выберите панель для каждой ячейки. При выборе уже размещённой панели ячейки меняются местами. «Пусто» скрывает панель; режим скрыть нельзя." }
+                            Repeater {
+                                model: ["Левая большая ячейка", "Средняя ячейка 1", "Средняя ячейка 2", "Средняя ячейка 3", "Правая ячейка 1", "Правая ячейка 2", "Правая ячейка 3", "Правая ячейка 4"]
+                                delegate: RowLayout {
+                                    Layout.fillWidth: true; spacing: 8
+                                    Label { text: modelData; color: Theme.dim; font.pixelSize: Theme.fsSmall; Layout.preferredWidth: 180 }
+                                    ComboBox {
+                                        Layout.fillWidth: true; implicitHeight: 30; font.pixelSize: Theme.fsSmall
+                                        model: win.workspaceChoiceNames
+                                        currentIndex: Math.max(0, win.workspaceChoiceIds.indexOf(win.activeWorkspace[index]))
+                                        onActivated: win.setCellPanel(index, win.workspaceChoiceIds[currentIndex])
+                                    }
+                                }
+                            }
+                            Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+                            Caption { text: "Сохранённые наборы" }
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: 6
+                                Label { text: "Пост"; color: Theme.text; Layout.preferredWidth: 80 }
+                                Btn { text: "Сохранить текущий"; implicitHeight: 30; Layout.fillWidth: true; onClicked: saveWorkspace("station") }
+                                Btn { text: "Применить пост"; implicitHeight: 30; Layout.fillWidth: true; enabled: prefs.stationLayout !== ""; onClicked: applySavedWorkspace("station") }
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: 6
+                                Label { text: "Оператор"; color: Theme.text; Layout.preferredWidth: 80 }
+                                Btn { text: "Сохранить текущий"; implicitHeight: 30; Layout.fillWidth: true; onClicked: saveWorkspace("operator") }
+                                Btn { text: "Применить оператора"; implicitHeight: 30; Layout.fillWidth: true; enabled: prefs.operatorLayout !== ""; onClicked: applySavedWorkspace("operator") }
+                            }
+                            Label { text: workspaceNotice; visible: workspaceNotice !== ""; color: Theme.accent; font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                            Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+                            Caption { text: "Кольцо отклонения позиции" }
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: 8
+                                Label { text: "Допуск, м (0,5…50)"; color: Theme.text; Layout.fillWidth: true }
+                                TextField {
+                                    implicitWidth: 90; implicitHeight: 30; text: Theme.num(deviationLimit, 1); font.family: Theme.mono
+                                    onEditingFinished: { const v = Number(text.replace(",", ".")); if (isFinite(v)) prefs.devLimit = Math.max(0.5, Math.min(50, v)); text = Theme.num(deviationLimit, 1) }
+                                }
+                            }
+                            Label { color: Theme.dim; font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true
+                                    text: "Порог меняет только отображение кольца и жёлтую индикацию отклонения. Шапка состояния, строка тревог и панель режима присутствуют в каждом наборе." }
+                            Item { Layout.preferredHeight: 4 }
                         }
                     }
-                    Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
-                    Caption { text: "Бортовой режим" }
-                    CheckBox { id: onboardCb; text: "Судно в эксплуатации: скрыть команды и метки имитатора"; checked: prefs.onboard
-                               onToggled: prefs.onboard = checked; font.pixelSize: Theme.fs }
-                    Label { color: Theme.dim; font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true
-                            text: "В бортовом режиме кнопки запуска и остановки имитатора и метка «ИМИТАЦИЯ» не показываются (дорожная карта, этап 1, п. 9)." }
-                    Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
-                    Caption { text: "О программе" }
-                    Label { text: "Пульт оператора СДП. Ядро в том же процессе. Изменение пределов и параметров судна — только через книгу судна с правами администратора."
-                            color: Theme.dim; font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true }
-                    Item { Layout.fillHeight: true }
+                    Rectangle { Layout.fillHeight: true; width: 1; color: Theme.line }
+                    ScrollView {
+                        id: generalScroll; Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredWidth: 430; clip: true
+                        contentWidth: availableWidth
+                        ColumnLayout {
+                            width: generalScroll.availableWidth; spacing: 12
+                            Caption { text: "Палитра" }
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: 8
+                                Repeater {
+                                    model: [ ["day", "День"], ["dusk", "Сумерки"], ["night", "Ночь"] ]
+                                    Btn { text: modelData[1]; implicitHeight: 32; Layout.fillWidth: true; highlighted: prefs.palette === modelData[0]
+                                          onClicked: prefs.palette = modelData[0] }
+                                }
+                            }
+                            Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+                            Caption { text: "Бортовой режим" }
+                            CheckBox { id: onboardCb; text: "Судно в эксплуатации: скрыть команды и метки имитатора"; checked: prefs.onboard
+                                       onToggled: prefs.onboard = checked; font.pixelSize: Theme.fs; Layout.fillWidth: true }
+                            Label { color: Theme.dim; font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true
+                                    text: "В бортовом режиме кнопки запуска и остановки имитатора и метка «ИМИТАЦИЯ» не показываются (дорожная карта, этап 1, п. 9)." }
+                            Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
+                            Caption { text: "О программе" }
+                            Label { text: "Пульт оператора СДП. Ядро в том же процессе. Изменение пределов и параметров судна — только через книгу судна с правами администратора."
+                                    color: Theme.dim; font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                            Item { Layout.fillHeight: true }
+                        }
+                    }
                 }
             }
         }
