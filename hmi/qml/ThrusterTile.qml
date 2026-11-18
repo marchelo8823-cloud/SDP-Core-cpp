@@ -34,7 +34,7 @@ Rectangle {
     // состояние: текст и цвет плашки
     readonly property var st: t.failed ? ["ОТКАЗ", Theme.alarm, Theme.bg]
                              : !t.enabled ? ["вне работы", Theme.line, Theme.dim]
-                             : t.taken ? ["в управлении", Qt.darker(Theme.ok, 1.6), Theme.text]
+                             : t.taken ? ["в управлении", Qt.darker(Theme.ok, 1.6), "#ffffff"]
                              : ["не взят", Theme.line, Theme.dim]
 
     Item {
