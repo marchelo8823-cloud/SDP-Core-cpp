@@ -10,6 +10,8 @@
 //   --alarms <A|W> (раскрыть список тревог из строки шапки: A — аварийные, W — предупреждения; для снимков)
 //   --workspace <full|watch|maneuver> (готовый набор рабочего места на время запуска, в настройки не пишется)
 //   --export-recording <файл.csv> (выгрузить актуальный журнал; при снимке ошибка выгрузки даёт код 7)
+//   --recording-dir <папка> (папка записи на время запуска, в настройки не пишется)
+//   --expect-recording <custom|fallback> (при снимке: выбранная папка / резервная запись с предупреждением; иначе код 9)
 //   --trend-demo (60 минут демонстрационной истории для снимков)  --expect-trend <5|15|60> (после нажатий: окно и число точек; иначе код 8)
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -18,6 +20,7 @@
 #include <QTimer>
 #include <QImage>
 #include <QQmlError>
+#include <QFileInfo>
 #include <cstdio>
 #include <functional>
 #include "hmicore.h"
@@ -32,6 +35,7 @@ int main(int argc, char** argv) {
     int tabArg = -1;                               // открыть вкладку (для снимков)
     QString alarmsArg;                             // раскрытый список тревог шапки: A или W (для снимков)
     QString workspaceArg;                          // готовый набор: full, watch или maneuver (для проверок и снимков)
+    QString recordingDirArg, expectRecording;      // проверка выбранной папки и резервного режима без смены настроек пользователя
     bool exportOk = true, trendDemo = false;
     HmiCore core;
     for (int i = 1; i < a.size(); ++i) {
@@ -54,6 +58,8 @@ int main(int argc, char** argv) {
         else if (k == "--alarms") alarmsArg = next();
         else if (k == "--workspace") workspaceArg = next();
         else if (k == "--trend-demo") trendDemo = true;
+        else if (k == "--recording-dir") { recordingDirArg = next(); core.setRecordingDirectory(recordingDirArg, false); }
+        else if (k == "--expect-recording") expectRecording = next();
         else if (k == "--export-recording") {
             const QString path = next(); exportOk = core.exportRecording(path);
             std::fprintf(exportOk ? stdout : stderr, exportOk ? "запись выгружена: %s\n" : "не удалось выгрузить запись: %s\n", path.toUtf8().constData());
@@ -104,18 +110,30 @@ int main(int argc, char** argv) {
         });
     }
     if (!shot.isEmpty() && win) {
-        core.setPaused(true);
+        if (expectRecording != "fallback") core.setPaused(true);   // при резерве ядро продолжает писать в новый внутренний CSV
         QTimer::singleShot(1500, [&]() {
-            bool fcOk = true;
+            bool fcOk = true, recordingOk = true;
             if (expectFc >= 0) {
                 const bool valid = core.property("s").toMap().value("fcValid").toBool();
                 fcOk = valid == (expectFc != 0);
                 if (!fcOk) std::fprintf(stderr, "ожидался fcValid=%d, а не %d\n", expectFc, valid ? 1 : 0);
             }
+            if (!expectRecording.isEmpty()) {
+                const QVariantMap rs = core.property("s").toMap();
+                const bool active = rs.value("recActive").toBool(), fallback = rs.value("recFallback").toBool();
+                const QString actual = rs.value("recDir").toString(), warning = rs.value("recWarning").toString();
+                const bool sameDir = QFileInfo(actual).absoluteFilePath() == QFileInfo(recordingDirArg).absoluteFilePath();
+                if (expectRecording == "custom") recordingOk = active && !fallback && sameDir;
+                else if (expectRecording == "fallback") recordingOk = active && fallback && !sameDir && !warning.isEmpty();
+                else recordingOk = false;
+                std::printf("запись: папка=%s; файл=%s; резерв=%d; активна=%d; предупреждение=%s\n",
+                            actual.toUtf8().constData(), rs.value("recFile").toString().toUtf8().constData(), fallback ? 1 : 0, active ? 1 : 0, warning.toUtf8().constData());
+                if (!recordingOk) std::fprintf(stderr, "не выполнено ожидание записи: %s\n", expectRecording.toUtf8().constData());
+            }
             const QImage img = win->grabWindow();
             const bool ok = img.save(shot);
             std::fprintf(ok ? stdout : stderr, ok ? "снимок: %s\n" : "не удалось сохранить снимок %s\n", shot.toUtf8().constData());
-            QCoreApplication::exit(!ok ? 2 : !fcOk ? 6 : !exportOk ? 7 : exitPress ? exitPress : qmlWarnings ? 3 : 0);
+            QCoreApplication::exit(!ok ? 2 : !fcOk ? 6 : !exportOk ? 7 : exitPress ? exitPress : qmlWarnings ? 3 : !recordingOk ? 9 : 0);
         });
     }
     return app.exec();

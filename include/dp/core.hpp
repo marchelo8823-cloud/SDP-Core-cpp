@@ -45,6 +45,20 @@ public:
     void stop() { closeIo(); if (log_) log_.flush(); }
     void flushLog() { if (log_) log_.flush(); }                 // снять актуальную копию журнала, не останавливая запись
     bool logActive() const { return log_.is_open() && log_.good(); }
+    // Безопасная смена журнала: сначала новый файл открыт, в него записан и сброшен штатный заголовок.
+    // При любой ошибке прежний поток и путь остаются нетронутыми; при успехе запись продолжается уже в новом CSV.
+    bool setLogFile(const std::string& path) {
+        if (path.empty()) return false;
+        if (path == set_.logFile && logActive()) return true;
+        std::ofstream next(path, std::ios::out | std::ios::trunc);
+        if (!next) { say("Предупреждение: не удалось открыть журнал " + path); return false; }
+        next << "t_s,состояние,режим,N_м,E_м,курс_град,опорная_N,опорная_E,опорный_курс_град,ошибка_м,ошибка_курса_град,tauX_Н,tauY_Н,tauN_Нм,загрузка,ветер_мс\n";
+        next.flush();
+        if (!next) { say("Предупреждение: не удалось записать заголовок журнала " + path); return false; }
+        if (log_.is_open()) { log_.flush(); log_.close(); }
+        log_ = std::move(next); set_.logFile = path;
+        return true;
+    }
 
     // ---------------------------------------------------------------- данные судна
     // Загрузка книги судна. Только когда судна нет или ядро в ожидании. При ошибках прежнее судно остаётся.
@@ -445,11 +459,7 @@ private:
         taken_.clear(); out_ = EngineOutput(); alarms_ = AlarmMgr(); shown_.clear(); fbOverride_.clear();
         opSpSet_ = false; modeSince_ = -1; n_ = sum2_ = max_ = h2_ = hmax_ = 0; lastState_ = CoreState::NoShip;
         applyCaps();
-        if (!set_.logFile.empty() && !log_.is_open()) {
-            log_.open(set_.logFile);
-            if (!log_) say("Предупреждение: не удалось открыть журнал " + set_.logFile);
-            else log_ << "t_s,состояние,режим,N_м,E_м,курс_град,опорная_N,опорная_E,опорный_курс_град,ошибка_м,ошибка_курса_град,tauX_Н,tauY_Н,tauN_Нм,загрузка,ветер_мс\n";
-        }
+        if (!set_.logFile.empty() && !logActive()) setLogFile(set_.logFile);
     }
     void applyCaps() { if (sh_) sh_->eng->controller().setMotionCaps(capSpeedKn_ * 0.514444, capRotDegMin_ / 60.0); }
     void writeLog() {

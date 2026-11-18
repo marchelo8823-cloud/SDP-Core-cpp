@@ -38,6 +38,8 @@ public:
     Q_INVOKABLE void ack();                                       // квитирование всех тревог (через менеджер ядра)
     Q_INVOKABLE void ackCode(const QString& code);                // квитирование одной тревоги по коду
     Q_INVOKABLE bool exportRecording(const QString& pathOrUrl);   // актуальная копия CSV-журнала; запись продолжается
+    // Пустой путь — внутренняя папка. Пользовательская папка сохраняется в QSettings, если persistent=true.
+    Q_INVOKABLE bool setRecordingDirectory(const QString& pathOrUrl, bool persistent = true);
     // Диаграмма возможностей (capability plot): расчёт по кнопке, не каждый цикл (тяжёлый перебор направлений).
     Q_INVOKABLE void capRun(double currentMS, bool wavesWithWind, double maxWindMS);
     void runFor(double seconds);                                  // прогнать ядро без реального времени (для проверок и снимков)
@@ -54,9 +56,16 @@ private:
     void refresh();
     void say(const std::string& m);
     static std::string localPath(const QString& p);
-    static QString newRecordingPath();
+    static QString internalRecordingDirectory();
+    static QString newRecordingPath(const QString& directory);
+    bool openRecording(const QString& directory);                // новый уникальный CSV; прежний журнал сохраняется при ошибке
+    void recoverRecording(const QString& reason);                // всегда внутренняя папка, без автоматического возврата на носитель
+    void checkRecording();
 
-    QString recordingPath_, recNotice_;
+    QString internalRecordingDir_, recordingPath_, recordingDir_, configuredRecordingDir_;
+    QString recNotice_, recWarning_;
+    bool recFallback_ = false;
+    int recCheck_ = 0;
     dp::Core core_;
     QTimer timer_;
     bool paused_ = false;

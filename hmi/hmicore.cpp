@@ -5,23 +5,35 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSaveFile>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QUrl>
 #include <cmath>
 
 using namespace dp;
 
-QString HmiCore::newRecordingPath() {
-    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/записи";
-    QDir().mkpath(dir);
+QString HmiCore::internalRecordingDirectory() {
+    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/записи";
+}
+
+QString HmiCore::newRecordingPath(const QString& directory) {
+    static quint64 serial = 0;
     const QString stamp = QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz");
-    return QDir(dir).filePath(QString("сеанс_%1_%2.csv").arg(stamp).arg(QCoreApplication::applicationPid()));
+    const QString base = QString("сеанс_%1_%2_%3").arg(stamp).arg(QCoreApplication::applicationPid()).arg(++serial);
+    QString path = QDir(directory).filePath(base + ".csv");
+    for (int n = 2; QFileInfo::exists(path); ++n) path = QDir(directory).filePath(QString("%1_%2.csv").arg(base).arg(n));
+    return path;
 }
 
 HmiCore::HmiCore(QObject* parent)
-    : QObject(parent), recordingPath_(newRecordingPath()),
+    : QObject(parent), internalRecordingDir_(internalRecordingDirectory()), recordingPath_(newRecordingPath(internalRecordingDir_)),
       core_(CoreSettings{10.0, recordingPath_.toStdString()}, [this](const std::string& m) { say(m); }) {
+    // Изолированные проверки на macOS: QStandardPaths там не следует за переменной HOME.
+    const QString internalOverride = qEnvironmentVariable("SDP_INTERNAL_RECORDING_DIR");
+    if (!internalOverride.isEmpty()) internalRecordingDir_ = QDir(internalOverride).absolutePath();
     connect(&timer_, &QTimer::timeout, this, &HmiCore::tick);
+    QSettings settings;
+    setRecordingDirectory(internalOverride.isEmpty() ? settings.value("recordingDirectory").toString() : QString(), false);
     timer_.start(100);
     refresh();
 }
@@ -29,6 +41,66 @@ HmiCore::HmiCore(QObject* parent)
 std::string HmiCore::localPath(const QString& p) {
     const QUrl u(p);
     return (u.isLocalFile() ? u.toLocalFile() : p).toStdString();
+}
+
+bool HmiCore::openRecording(const QString& directory) {
+    const QFileInfo info(directory);
+    if (!info.exists() || !info.isDir() || !info.isWritable()) return false;
+    const QString path = newRecordingPath(directory);
+    if (!core_.setLogFile(path.toStdString())) return false;
+    recordingPath_ = path;
+    recordingDir_ = QDir(directory).absolutePath();
+    return true;
+}
+
+void HmiCore::recoverRecording(const QString& reason) {
+    QDir().mkpath(internalRecordingDir_);
+    if (openRecording(internalRecordingDir_)) {
+        recFallback_ = !configuredRecordingDir_.isEmpty();
+        recWarning_ = reason;
+    } else {
+        recWarning_ = reason + " Не удалось открыть внутреннюю папку: " + internalRecordingDir_;
+    }
+    say(recWarning_.toStdString());
+    refresh();
+}
+
+bool HmiCore::setRecordingDirectory(const QString& pathOrUrl, bool persistent) {
+    const QUrl url(pathOrUrl.trimmed());
+    QString requested = url.isLocalFile() ? url.toLocalFile() : pathOrUrl.trimmed();
+    if (!requested.isEmpty()) requested = QDir::cleanPath(QDir(requested).absolutePath());
+    configuredRecordingDir_ = requested;
+    if (persistent) {
+        QSettings settings;
+        if (requested.isEmpty()) settings.remove("recordingDirectory");
+        else settings.setValue("recordingDirectory", requested);
+        settings.sync();
+    }
+    const QString target = requested.isEmpty() ? internalRecordingDir_ : requested;
+    if (requested.isEmpty()) QDir().mkpath(target);
+    if (openRecording(target)) {
+        recFallback_ = false;
+        recWarning_.clear();
+        recNotice_.clear();
+        say(("Папка автоматической записи: " + recordingDir_).toStdString());
+        refresh();
+        return true;
+    }
+    const QString reason = requested.isEmpty()
+        ? "Внутренняя папка записи недоступна. Предпринята повторная попытка создать журнал."
+        : "Выбранная папка недоступна: " + requested + ". Запись продолжается на внутреннем диске.";
+    recoverRecording(reason);
+    return false;
+}
+
+void HmiCore::checkRecording() {
+    core_.flushLog();
+    const QFileInfo dir(recordingDir_), file(recordingPath_);
+    if (core_.logActive() && dir.exists() && dir.isDir() && dir.isWritable() && file.exists()) return;
+    const QString reason = !configuredRecordingDir_.isEmpty() && recordingDir_ != internalRecordingDir_
+        ? "Папка записи недоступна: " + recordingDir_ + ". Запись продолжается на внутреннем диске в новом CSV."
+        : "Текущий журнал записи недоступен. Создан новый CSV во внутренней папке.";
+    recoverRecording(reason);
 }
 
 void HmiCore::say(const std::string& m) {
@@ -104,6 +176,7 @@ void HmiCore::capRun(double currentMS, bool wavesWithWind, double maxWindMS) {
 }
 
 void HmiCore::tick() {
+    if (++recCheck_ >= 10) { recCheck_ = 0; checkRecording(); }   // контроль носителя 1 раз/с, также при паузе для снимка
     if (paused_) return;
     const int n = std::max(1, static_cast<int>(std::lround(core_.simSpeed())));   // ускорение имитатора: столько циклов за 0,1 с
     for (int i = 0; i < n; ++i) core_.cycle();
@@ -136,6 +209,8 @@ void HmiCore::refresh() {
     m["shipName"] = core_.ship() ? QString::fromStdString(core_.ship()->vessel.name) : QString();
     const QFileInfo recInfo(recordingPath_);
     m["recActive"] = core_.logActive(); m["recFile"] = recInfo.fileName(); m["recBytes"] = recInfo.size(); m["recNotice"] = recNotice_;
+    m["recDir"] = recordingDir_; m["recConfiguredDir"] = configuredRecordingDir_;
+    m["recFallback"] = recFallback_; m["recWarning"] = recWarning_;
     m["n"] = es.n; m["e"] = es.e; m["hdg"] = std::fmod(rad2deg(es.psi) + 360.0, 360.0);
     m["rot"] = rad2deg(es.r) * 60.0;                              // °/мин
     m["u"] = es.u; m["v"] = es.v;
