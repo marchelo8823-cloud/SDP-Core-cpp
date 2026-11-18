@@ -6,6 +6,7 @@
 //   --press "<надпись кнопки>" (можно несколько; нажатие кнопки на экране)  --expect-mode <код> (после нажатий: 0 — ожидание, 3 — курс, 4 — позиция; иначе код выхода 4)
 //   --palette <day|dusk|night> (палитра на время запуска, в настройки не пишется)  --onboard (бортовой режим на время запуска)
 //   --tab <0-8> (открыть вкладку: 0 — Главный … 8 — Настройки; для снимков вкладок)
+//   --alarms <A|W> (раскрыть список тревог из строки шапки: A — аварийные, W — предупреждения; для снимков)
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -25,6 +26,7 @@ int main(int argc, char** argv) {
     QString shot; int w = 1920, h = 1080; QStringList presses; int expectMode = -1, expectCa = -1;
     QString paletteArg; bool onboardArg = false;   // временно, на время запуска (проверки и снимки); в настройки не пишется
     int tabArg = -1;                               // открыть вкладку (для снимков)
+    QString alarmsArg;                             // раскрытый список тревог шапки: A или W (для снимков)
     HmiCore core;
     for (int i = 1; i < a.size(); ++i) {
         auto next = [&]() { return i + 1 < a.size() ? a[++i] : QString(); };
@@ -41,6 +43,7 @@ int main(int argc, char** argv) {
         else if (k == "--palette") paletteArg = next();
         else if (k == "--onboard") onboardArg = true;
         else if (k == "--tab") tabArg = next().toInt();
+        else if (k == "--alarms") alarmsArg = next();
     }
     QQmlApplicationEngine eng;
     int qmlWarnings = 0;   // ошибки и предупреждения QML: при проверке со снимком — код выхода 3
@@ -50,6 +53,7 @@ int main(int argc, char** argv) {
     eng.rootContext()->setContextProperty("core", &core);
     eng.rootContext()->setContextProperty("cliPalette", paletteArg);
     eng.rootContext()->setContextProperty("cliOnboard", onboardArg);
+    eng.rootContext()->setContextProperty("cliAlarmsExpand", alarmsArg);
     eng.load(QUrl("qrc:/qml/Main.qml"));
     if (eng.rootObjects().isEmpty()) return 1;
     auto* win = qobject_cast<QQuickWindow*>(eng.rootObjects().first());

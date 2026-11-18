@@ -61,5 +61,5 @@ QtObject {
         return ("00" + Math.round(((v % 360) + 360) % 360) % 360).slice(-3) + "°"
     }
     function stateColor(code) { return code === 3 ? ok : code === 2 ? accent : code === 1 ? warn : dim }
-    function levelColor(l) { return l === 1 ? alarm : l === 2 ? warn : info }
+    function levelColor(l) { return l <= 1 ? alarm : l === 2 ? warn : info }
 }

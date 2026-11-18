@@ -58,10 +58,31 @@ ApplicationWindow {
     }
     readonly property bool posLossOrReturn: { for (let i = 0; i < core.alarms.length; ++i) { const c = core.alarms[i].code; if (c === "POS_DROPOUT" || c === "POS_ALL_REJ" || c === "POS_RETURN") return true } return false }
 
-    // строка тревог: раздельно аварии (А) и предупреждения (W), как два ряда в K-Pos
-    readonly property var alarmsA: core.alarms.filter(a => a.level === 1)
-    readonly property var alarmsW: core.alarms.filter(a => a.level === 2)
-    readonly property int unacked: core.alarms.filter(a => !a.acked).length
+    // Ряд строки тревог: плашка А/W, последнее сообщение с временем, «ещё N»; щелчок раскрывает список (как в K-Pos)
+    component AlarmRow: Item {
+        property string cls: "A"                    // "A" | "W"
+        readonly property var rows: cls === "A" ? win.alarmsA : win.alarmsW
+        readonly property bool expanded: win.expandAlm === cls
+        Layout.fillWidth: true; implicitHeight: 16
+        RowLayout {
+            anchors.fill: parent; spacing: 6
+            Rectangle { implicitWidth: 18; implicitHeight: 15; radius: 2; color: cls === "A" ? Theme.alarm : Theme.warn
+                        Label { anchors.centerIn: parent; text: cls; color: Theme.bg; font.pixelSize: 10; font.bold: true } }
+            Label { text: rows.length ? ("<b>" + rows[0].code + "</b>  " + rows[0].text + (rows[0].gone ? " (условие ушло)" : "") + (rows.length > 1 ? "   ·   ещё " + (rows.length - 1) : "")) : "—"
+                    color: rows.length && !rows[0].gone ? Theme.text : Theme.dim; font.pixelSize: Theme.fsSmall; textFormat: Text.StyledText; elide: Text.ElideRight; Layout.fillWidth: true }
+            Label { visible: rows.length > 0; text: rows.length ? win.fmtT(rows[0].tFirst) : ""; color: Theme.dim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall }
+            Label { visible: rows.length > 0; text: expanded ? "▾" : "▸"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+        }
+        MouseArea { anchors.fill: parent; enabled: rows.length > 0; cursorShape: Qt.PointingHandCursor
+                    onClicked: win.expandAlm = expanded ? "" : cls }
+    }
+
+    // строка тревог: раздельно аварии (А) и предупреждения (W), как два ряда в K-Pos; ряд раскрывается списком
+    readonly property var alarmsA: core.alarms.filter(a => a.level <= 1)   // аварийные и тревоги (красный ряд)
+    readonly property var alarmsW: core.alarms.filter(a => a.level === 2)  // предупреждения (жёлтый ряд)
+    readonly property int unacked: core.alarms.filter(a => !a.acked && a.level < 3).length
+    property string expandAlm: cliAlarmsExpand      // "" | "A" | "W" — раскрытый список строки тревог
+    function fmtT(t) { return "t+" + Theme.num(t, 0) + " с" }
 
     // история для трендов: раз в секунду, 60 минут
     property var hist: ({ err: [], load: [], wind: [], pow: [] })
@@ -114,28 +135,67 @@ ApplicationWindow {
                 anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 12
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 1
-                    RowLayout {
-                        spacing: 6
-                        Rectangle { implicitWidth: 18; implicitHeight: 15; radius: 2; color: Theme.alarm
-                                    Label { anchors.centerIn: parent; text: "А"; color: Theme.bg; font.pixelSize: 10; font.bold: true } }
-                        Label { text: alarmsA.length ? ("<b>" + alarmsA[0].code + "</b>  " + alarmsA[0].text + (alarmsA.length > 1 ? "   ·   ещё " + (alarmsA.length - 1) : "")) : "—"
-                                color: alarmsA.length ? Theme.text : Theme.dim; font.pixelSize: Theme.fsSmall; textFormat: Text.StyledText; elide: Text.ElideRight; Layout.fillWidth: true }
-                    }
-                    RowLayout {
-                        spacing: 6
-                        Rectangle { implicitWidth: 18; implicitHeight: 15; radius: 2; color: Theme.warn
-                                    Label { anchors.centerIn: parent; text: "W"; color: Theme.bg; font.pixelSize: 10; font.bold: true } }
-                        Label { text: alarmsW.length ? ("<b>" + alarmsW[0].code + "</b>  " + alarmsW[0].text + (alarmsW.length > 1 ? "   ·   ещё " + (alarmsW.length - 1) : "")) : "—"
-                                color: alarmsW.length ? Theme.text : Theme.dim; font.pixelSize: Theme.fsSmall; textFormat: Text.StyledText; elide: Text.ElideRight; Layout.fillWidth: true }
-                    }
+                    AlarmRow { cls: "A" }
+                    AlarmRow { cls: "W" }
                 }
-                Rectangle {
-                    implicitWidth: unl.implicitWidth + 14; implicitHeight: 28; radius: 3
-                    color: "transparent"; border.color: unacked > 0 ? Theme.alarm : Theme.line
-                    Label { id: unl; anchors.centerIn: parent; text: "не квитировано: " + unacked
-                            color: unacked > 0 ? Theme.alarm : Theme.dim; font.pixelSize: Theme.fsSmall }
+                // колокол со счётчиком неподтверждённых (как в K-Pos): щелчок — вкладка «Тревоги»
+                Item {
+                    implicitWidth: 46; implicitHeight: 32
+                    Canvas {
+                        id: bell; anchors.fill: parent
+                        property int n: win.unacked
+                        onNChanged: requestPaint()
+                        Connections { target: Theme; function onSchemeChanged() { bell.requestPaint() } }
+                        onPaint: {
+                            const g = getContext("2d"); g.reset()
+                            const cx = width / 2 - 4, top = 4, w2 = 8
+                            g.fillStyle = win.unacked > 0 ? Theme.text : Theme.dim
+                            g.beginPath()
+                            g.moveTo(cx - w2, top + 13)
+                            g.quadraticCurveTo(cx - w2, top + 1, cx, top)          // купол
+                            g.quadraticCurveTo(cx + w2, top + 1, cx + w2, top + 13)
+                            g.lineTo(cx + w2 + 2, top + 16); g.lineTo(cx - w2 - 2, top + 16); g.closePath(); g.fill()
+                            g.beginPath(); g.arc(cx, top + 19, 2.5, 0, 2 * Math.PI); g.fill()   // язычок
+                        }
+                    }
+                    Rectangle {
+                        visible: win.unacked > 0; anchors.right: parent.right; anchors.top: parent.top
+                        implicitWidth: cnt.implicitWidth + 6; implicitHeight: 14; radius: 7; color: Theme.alarm
+                        Label { id: cnt; anchors.centerIn: parent; text: win.unacked; color: Theme.bg; font.bold: true; font.pixelSize: 10 }
+                    }
+                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: tabs.currentIndex = 6 }
                 }
                 Btn { text: "Квитировать"; implicitHeight: 30; enabled: unacked > 0; onClicked: core.ack() }
+            }
+        }
+
+        // Раскрытый список ряда тревог: время появления, число повторов, «условие ушло», квитирование по одной
+        Panel {
+            id: almDrop
+            visible: win.expandAlm !== ""
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? Math.min(190, 44 + rows.length * 26) : 0
+            readonly property var rows: win.expandAlm === "A" ? win.alarmsA : win.alarmsW
+            ColumnLayout {
+                anchors.fill: parent; anchors.margins: 8; spacing: 4
+                RowLayout {
+                    Layout.fillWidth: true
+                    Caption { text: win.expandAlm === "A" ? "Тревоги — аварийные" : "Тревоги — предупреждения"; Layout.fillWidth: true }
+                    Btn { text: "Скрыть"; implicitHeight: 24; font.pixelSize: Theme.fsSmall; onClicked: win.expandAlm = "" }
+                }
+                ListView {
+                    Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 2
+                    model: almDrop.rows
+                    delegate: RowLayout {
+                        width: ListView.view.width; spacing: 8
+                        Label { text: win.fmtT(modelData.tFirst); color: Theme.dim; font.family: Theme.mono; font.pixelSize: Theme.fsSmall; Layout.preferredWidth: 80 }
+                        Label { text: modelData.code; color: win.expandAlm === "A" ? Theme.alarm : Theme.warn; font.bold: true; font.pixelSize: Theme.fsSmall; Layout.preferredWidth: 170; elide: Text.ElideRight }
+                        Label { text: modelData.text + (modelData.count > 1 ? "  ×" + modelData.count : "") + (modelData.gone ? "  · условие ушло" : "")
+                                color: modelData.gone ? Theme.dim : Theme.text; font.pixelSize: Theme.fsSmall; Layout.fillWidth: true; elide: Text.ElideRight }
+                        Label { visible: modelData.acked; text: "квитировано"; color: Theme.dim; font.pixelSize: Theme.fsSmall }
+                        Btn { visible: !modelData.acked; text: "Квит."; implicitHeight: 22; font.pixelSize: Theme.fsSmall; onClicked: core.ackCode(modelData.code) }
+                    }
+                }
             }
         }
 
@@ -538,10 +598,16 @@ ApplicationWindow {
                             model: core.alarms
                             delegate: Rectangle {
                                 width: ListView.view.width; height: al.implicitHeight + 12; radius: 2
-                                color: modelData.level === 1 ? Qt.rgba(0.9, 0.33, 0.29, modelData.acked ? 0.18 : 0.38) : modelData.level === 2 ? Qt.rgba(0.89, 0.7, 0.24, modelData.acked ? 0.12 : 0.28) : Theme.panel2
+                                color: modelData.level <= 1 ? Qt.rgba(0.9, 0.33, 0.29, modelData.acked ? 0.18 : 0.38) : modelData.level === 2 ? Qt.rgba(0.89, 0.7, 0.24, modelData.acked ? 0.12 : 0.28) : Theme.panel2
                                 border.color: Theme.levelColor(modelData.level); border.width: modelData.acked ? 1 : 2
-                                Label { id: al; anchors.fill: parent; anchors.margins: 6; wrapMode: Text.Wrap; color: Theme.text; font.pixelSize: Theme.fsSmall
-                                        text: "<b>" + modelData.code + "</b>  " + modelData.text; textFormat: Text.StyledText }
+                                RowLayout {
+                                    anchors.fill: parent; anchors.margins: 6; spacing: 8
+                                    Label { id: al; Layout.fillWidth: true; wrapMode: Text.Wrap; color: modelData.gone ? Theme.dim : Theme.text; font.pixelSize: Theme.fsSmall
+                                            text: win.fmtT(modelData.tFirst) + "  <b>" + modelData.code + "</b>  " + modelData.text
+                                                + (modelData.count > 1 ? "  ×" + modelData.count : "") + (modelData.gone ? "  · условие ушло" : "") + (modelData.acked ? "  · квитировано" : "")
+                                            textFormat: Text.StyledText }
+                                    Btn { visible: !modelData.acked && modelData.level < 3; text: "Квит."; implicitHeight: 24; font.pixelSize: Theme.fsSmall; onClicked: core.ackCode(modelData.code) }
+                                }
                             }
                             Label { visible: core.alarms.length === 0; text: "Тревог нет"; color: Theme.ok; anchors.centerIn: parent }
                         }

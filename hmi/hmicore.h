@@ -31,7 +31,8 @@ public:
     Q_INVOKABLE void command(const QString& line);              // любая команда ядра (как в sdp_run)
     Q_INVOKABLE void loadShip(const QString& pathOrUrl);
     Q_INVOKABLE void simStart(const QString& pathOrUrl);
-    Q_INVOKABLE void ack();                                       // квитирование тревог (снимает мигание новых)
+    Q_INVOKABLE void ack();                                       // квитирование всех тревог (через менеджер ядра)
+    Q_INVOKABLE void ackCode(const QString& code);                // квитирование одной тревоги по коду
     void runFor(double seconds);                                  // прогнать ядро без реального времени (для проверок и снимков)
     void setPaused(bool p) { paused_ = p; }
 
@@ -54,5 +55,4 @@ private:
     QStringList log_;
     std::deque<std::pair<double, double>> trail_;
     double lastTrail_ = -1e9;
-    QSet<QString> acked_;
 };
