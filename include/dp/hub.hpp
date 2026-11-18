@@ -70,6 +70,10 @@ struct ChannelInfo {
     std::string kindText;
     std::string accept, talkers, known;   // действующий список типов, разрешённые talker, перечень разбираемых типов этого датчика
     bool checksum = true; int minQ = 1; double maxHdop = 10, magVar = 0, rollSign = 1, pitchSign = 1, heaveSign = 1;
+    // последние значения числами — для пульта (values — то же текстом); только показ, в решение не входят
+    double hdgDeg = 0, windMs = 0, windFromRelDeg = 0, rollDeg = 0, pitchDeg = 0;
+    bool sogValid = false; double sogKn = 0, cogDeg = 0;
+    int gnssQ = -1, gnssSats = -1; double gnssHdop = -1, gstSigma = 0;
 };
 
 // Типы предложений, которые разбирает ядро, по видам датчиков (для настройки в окне «Датчики»).
@@ -279,6 +283,10 @@ public:
             if (c.cfg.kind == ChannelKind::Gnss && c.gstSigma > 0) { char q[48]; std::snprintf(q, sizeof q, "  ·  GST σ %.2f м", c.gstSigma); vs += q; }
             if (c.cfg.kind == ChannelKind::Gyro && c.rotValid) { char q[48]; std::snprintf(q, sizeof q, "  ·  ROT %.1f°/мин", c.rotDegMin); vs += q; }
             ci.values = vs;
+            { const double h = rad2deg(c.hdg.psi); ci.hdgDeg = h < 0 ? h + 360.0 : h; }
+            ci.windMs = c.wind.speed; ci.windFromRelDeg = rad2deg(c.wind.fromRel); ci.rollDeg = rad2deg(c.mru.roll); ci.pitchDeg = rad2deg(c.mru.pitch);
+            ci.sogValid = c.sogValid; ci.sogKn = c.sogKn; ci.cogDeg = c.cogDeg;
+            ci.gnssQ = c.ggaQ; ci.gnssSats = c.ggaSats; ci.gnssHdop = c.ggaHdop; ci.gstSigma = c.gstSigma;
             ci.accept = c.cfg.accept.empty() ? defaultSentences(c.cfg.kind) : c.cfg.accept; ci.talkers = c.cfg.talkers; ci.known = knownSentences(c.cfg.kind);
             ci.checksum = c.cfg.requireChecksum; ci.minQ = c.cfg.minGnssQuality; ci.maxHdop = c.cfg.maxHdop; ci.magVar = c.cfg.magVarDeg;
             ci.rollSign = c.cfg.rollSign; ci.pitchSign = c.cfg.pitchSign; ci.heaveSign = c.cfg.heaveSign;
@@ -335,6 +343,7 @@ private:
         std::string gnssInfo;                                    // DOP/тип решения/время из GSA, ZDA (только показ)
         bool rotValid = false; double rotDegMin = 0;             // скорость поворота из ROT (только показ)
         bool sogValid = false; double sogKn = 0, cogDeg = 0;    // скорость и курс над грунтом из VTG (только показ)
+        int ggaQ = -1, ggaSats = -1; double ggaHdop = -1;        // качество решения, спутники, HDOP из последнего принятого GGA (только показ)
         std::deque<RawLine> raw; long long seq = 0; std::deque<double> arrivals;
     };
 
@@ -394,6 +403,7 @@ private:
             if (q < c.cfg.minGnssQuality) return reject(c, "качество решения GGA ниже допустимого");
             double hd; if (nmea::toDouble(s.f[7], hd) && hd > c.cfg.maxHdop) return reject(c, "HDOP выше допустимого");
             if (!nmea::parseAngle(s.f[1], s.f[2], true, lat) || !nmea::parseAngle(s.f[3], s.f[4], false, lon)) return reject(c, "нет координат в GGA");
+            c.ggaQ = q; c.ggaSats = s.f[6].empty() ? -1 : std::atoi(s.f[6].c_str()); c.ggaHdop = nmea::toDouble(s.f[7], hd) ? hd : -1;   // только показ
             return setPosGeo(c, lat, lon, now);
         }
         if (s.type == "GLL" && s.f.size() >= 6) {
