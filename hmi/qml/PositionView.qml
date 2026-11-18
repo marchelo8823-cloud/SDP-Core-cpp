@@ -208,6 +208,7 @@ Rectangle {
     onFollowVesselChanged: cv.requestPaint()
     onWidthChanged: cv.requestPaint()
     onHeightChanged: cv.requestPaint()
+    Connections { target: Theme; function onSchemeChanged() { cv.requestPaint() } }   // смена палитры
 
     // ── окна по углам: цифры отдельно от графики ──
     component Box: Rectangle {

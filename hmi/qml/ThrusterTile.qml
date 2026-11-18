@@ -97,6 +97,7 @@ Rectangle {
                 g.fillStyle = Theme.text; g.beginPath(); g.arc(c, cy, 4, 0, 2 * Math.PI); g.fill()
             }
             Connections { target: tile; function onTChanged() { dial.requestPaint() } }
+            Connections { target: Theme; function onSchemeChanged() { dial.requestPaint() } }   // смена палитры
         }
 
         // ── числа и полоса упора ──

@@ -1,24 +1,29 @@
-// Цвета и шрифты пульта. Тёмная гамма — как у пультов СДП на мостике (ночью не слепит).
+// Цвета и шрифты пульта. Три палитры: «день» — светлая, «сумерки» — средняя, «ночь» — тёмная
+// (ночью не слепит). Переключение — на вкладке «Настройки», выбор хранится в настройках пульта.
 pragma Singleton
 import QtQuick
 
 QtObject {
-    readonly property color bg: "#161a1f"
-    readonly property color panel: "#1f252c"
-    readonly property color panel2: "#262d35"
-    readonly property color line: "#36404a"
-    readonly property color text: "#dde4ea"
-    readonly property color dim: "#8a96a3"
-    readonly property color accent: "#4ba3de"      // заданное: точка, курс, команды
-    readonly property color vessel: "#7cc2ee"
-    readonly property color ok: "#4cb874"
-    readonly property color warn: "#e3b23c"
-    readonly property color alarm: "#e5534b"
-    readonly property color info: "#8fa7bd"
-    readonly property color fb: "#e8e8e8"          // факт (обратная связь)
-    readonly property color wind: "#c9a6f2"
-    readonly property color dist: "#4fd1c5"        // внешнее возмущение (бирюзовый: оранжевый путался с предупреждением)
-    readonly property color grid: "#29323b"        // кольца и сетка плана — тише линий рамок
+    property string scheme: "night"          // day | dusk | night
+    readonly property bool day: scheme === "day"
+    readonly property bool dusk: scheme === "dusk"
+
+    readonly property color bg: day ? "#d9dee4" : dusk ? "#272c33" : "#161a1f"
+    readonly property color panel: day ? "#eceff3" : dusk ? "#32383f" : "#1f252c"
+    readonly property color panel2: day ? "#dee4ea" : dusk ? "#3b424b" : "#262d35"
+    readonly property color line: day ? "#b7c0ca" : dusk ? "#4b525c" : "#36404a"
+    readonly property color text: day ? "#1c232b" : "#dde4ea"
+    readonly property color dim: day ? "#59636f" : dusk ? "#98a3af" : "#8a96a3"
+    readonly property color accent: day ? "#1c6cb0" : "#4ba3de"      // заданное: точка, курс, команды
+    readonly property color vessel: day ? "#2277b8" : "#7cc2ee"
+    readonly property color ok: day ? "#2c7a45" : "#4cb874"
+    readonly property color warn: day ? "#8f6c0f" : "#e3b23c"
+    readonly property color alarm: day ? "#c23a32" : "#e5534b"
+    readonly property color info: day ? "#49627a" : "#8fa7bd"
+    readonly property color fb: day ? "#3a424b" : "#e8e8e8"          // факт (обратная связь)
+    readonly property color wind: day ? "#6f4bb0" : "#c9a6f2"
+    readonly property color dist: day ? "#12796d" : "#4fd1c5"        // внешнее возмущение (бирюзовый: оранжевый путался с предупреждением)
+    readonly property color grid: day ? "#c6cdd5" : dusk ? "#3a4149" : "#29323b"   // кольца и сетка плана — тише линий рамок
     readonly property string font: "DejaVu Sans"
     readonly property string mono: "DejaVu Sans Mono"
     readonly property int fs: 15
