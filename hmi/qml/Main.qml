@@ -7,7 +7,6 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
 import QtQuick.Window
-import QtCore
 import "."
 
 ApplicationWindow {
@@ -30,13 +29,20 @@ ApplicationWindow {
 
     // Настройки пульта (хранятся): палитра, бортовой режим и раскладки рабочих мест.
     // cli* — временные override для проверок и снимков, в настройки не пишутся.
-    Settings {
+    QtObject {
         id: prefs
-        property string palette: "night"; property bool onboard: false
-        property string workspaceLayout: '["plan","hdg","mode","move","env","dev","power","ca"]'
-        property string workspaceName: "Полный"
-        property string stationLayout: ""; property string operatorLayout: ""
-        property real devLimit: 5.0
+        property string palette: core.settingValue("palette", "night"); property bool onboard: core.settingValue("onboard", false)
+        property string workspaceLayout: core.settingValue("workspaceLayout", '["plan","hdg","mode","move","env","dev","power","ca"]')
+        property string workspaceName: core.settingValue("workspaceName", "Полный")
+        property string stationLayout: core.settingValue("stationLayout", ""); property string operatorLayout: core.settingValue("operatorLayout", "")
+        property real devLimit: core.settingValue("devLimit", 5.0)
+        onPaletteChanged: core.setSettingValue("palette", palette)
+        onOnboardChanged: core.setSettingValue("onboard", onboard)
+        onWorkspaceLayoutChanged: core.setSettingValue("workspaceLayout", workspaceLayout)
+        onWorkspaceNameChanged: core.setSettingValue("workspaceName", workspaceName)
+        onStationLayoutChanged: core.setSettingValue("stationLayout", stationLayout)
+        onOperatorLayoutChanged: core.setSettingValue("operatorLayout", operatorLayout)
+        onDevLimitChanged: core.setSettingValue("devLimit", devLimit)
     }
     Binding { target: Theme; property: "scheme"; value: cliPalette !== "" ? cliPalette : prefs.palette }
     readonly property bool onboard: cliOnboard || prefs.onboard
@@ -239,7 +245,13 @@ ApplicationWindow {
         }
         win.histTick++; win.repaintTrends()
     }
-    function repaintTrends() { for (const c of trendCol.children) if (c.cv) c.cv.requestPaint() }
+    function repaintTrends() {
+        // В Qt 6.4 children ещё не поддерживает for…of; индексный обход работает во всех поддерживаемых версиях.
+        for (let i = 0; i < trendCol.children.length; ++i) {
+            const c = trendCol.children[i]
+            if (c.cv) c.cv.requestPaint()
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 6; spacing: 6

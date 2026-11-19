@@ -38,6 +38,8 @@ public:
     Q_INVOKABLE void ack();                                       // квитирование всех тревог (через менеджер ядра)
     Q_INVOKABLE void ackCode(const QString& code);                // квитирование одной тревоги по коду
     Q_INVOKABLE bool exportRecording(const QString& pathOrUrl);   // актуальная копия CSV-журнала; запись продолжается
+    Q_INVOKABLE QVariant settingValue(const QString& key, const QVariant& fallback) const;  // настройки QML без зависимости от версии модуля QtCore
+    Q_INVOKABLE void setSettingValue(const QString& key, const QVariant& value);
     // Пустой путь — внутренняя папка. Пользовательская папка сохраняется в QSettings, если persistent=true.
     Q_INVOKABLE bool setRecordingDirectory(const QString& pathOrUrl, bool persistent = true);
     // Диаграмма возможностей (capability plot): расчёт по кнопке, не каждый цикл (тяжёлый перебор направлений).
