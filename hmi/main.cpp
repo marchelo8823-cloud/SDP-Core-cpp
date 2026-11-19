@@ -22,11 +22,14 @@
 #include <QQmlError>
 #include <QFileInfo>
 #include <cstdio>
+#include <clocale>
 #include <functional>
 #include "hmicore.h"
 
 int main(int argc, char** argv) {
     QGuiApplication app(argc, argv);
+    // Excel, JSON и NMEA используют десятичную точку независимо от языка системы; QLocale интерфейса не меняется.
+    std::setlocale(LC_NUMERIC, "C");
     app.setApplicationName("SDP HMI");
     app.setOrganizationName("SDP");
     QStringList a = app.arguments();

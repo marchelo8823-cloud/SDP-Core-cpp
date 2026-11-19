@@ -122,6 +122,17 @@ void HmiCore::command(const QString& line) {
 }
 void HmiCore::loadShip(const QString& p) { command("ship load " + QString::fromStdString(localPath(p))); }
 void HmiCore::simStart(const QString& p) { command("sim start " + QString::fromStdString(localPath(p))); }
+
+QVariant HmiCore::settingValue(const QString& key, const QVariant& fallback) const {
+    QSettings settings;
+    return settings.value(key, fallback);
+}
+void HmiCore::setSettingValue(const QString& key, const QVariant& value) {
+    QSettings settings;
+    settings.setValue(key, value);
+    settings.sync();
+}
+
 void HmiCore::ack() { core_.alarms().ack(core_.clock()); refresh(); }                    // квитирование через менеджер ядра: попадает и в журнал событий
 void HmiCore::ackCode(const QString& c) { core_.alarms().ack(core_.clock(), c.toStdString()); refresh(); }   // по одной тревоге
 

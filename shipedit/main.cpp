@@ -8,12 +8,15 @@
 #include <QEventLoop>
 #include <QTimer>
 #include <cstdio>
+#include <clocale>
 
 #include "mainwindow.h"
 #include "viewedit.h"
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    // Числа в книгах Excel и конфигурации ядра всегда читаются с десятичной точкой.
+    std::setlocale(LC_NUMERIC, "C");
     QApplication::setApplicationName("sdp_ship"); QApplication::setOrganizationName("SDP");
     MainWindow w;
     for (const QString& x : app.arguments()) if (x == "--screenshot") w.quietDialogs = true;
