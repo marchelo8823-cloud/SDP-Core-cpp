@@ -228,8 +228,9 @@ void HmiCore::refresh() {
     m["posValid"] = es.posValid; m["hdgValid"] = es.hdgValid; m["hdgDR"] = es.hdgDeadReckon; m["posDR"] = es.refLost;
     m["posSource"] = QString::fromStdString(es.posSource);
     // счисление: сколько секунд нет измерений, вероятный уход и погрешность фильтра; расхождение датчиков
-    m["refLostS"] = es.refLostS; m["drDriftM"] = es.drDriftM; m["posUncertM"] = es.posUncertM;
+    m["refLostS"] = es.refLostS; m["drDriftM"] = es.drDriftM; m["posUncertM"] = es.posUncertM; m["posSigma"] = es.posSigma;
     m["hdgLostS"] = es.hdgLostS; m["gyroDisagree"] = es.gyroDisagree; m["gnssDisagree"] = es.gnssDisagree;
+    m["mruValid"] = es.mruValid; m["mruDisagree"] = es.mruDisagree; m["mruCount"] = es.mruCount;
     { double la = 0, lo = 0; const bool g = core_.geo(es.n, es.e, la, lo); m["geoValid"] = g; m["lat"] = la; m["lon"] = lo; }
     m["refN"] = o.ctl.refN; m["refE"] = o.ctl.refE; m["refHdg"] = std::fmod(o.ctl.refPsiDeg + 360.0, 360.0);
     m["errDist"] = o.ctl.errDist; m["errHdg"] = o.ctl.errHdgDeg; m["errAlong"] = o.ctl.errAlong; m["errCross"] = o.ctl.errCross;

@@ -1,3 +1,4 @@
 singleton Theme 1.0 Theme.qml
 PositionView 1.0 PositionView.qml
 ThrusterTile 1.0 ThrusterTile.qml
+ReferenceSystemsView 1.0 ReferenceSystemsView.qml

@@ -24,6 +24,10 @@ ApplicationWindow {
     palette.mid: Theme.line; palette.dark: Theme.line; palette.light: Theme.panel2; palette.placeholderText: Theme.dim
 
     readonly property var s: core.s
+    // Контроль вкладки опорных систем для автоматической проверки: четыре группы и все строки датчиков.
+    readonly property int referenceCardCount: refView.cardCount
+    readonly property int referenceRowCount: refView.rowCount
+    readonly property int referenceValidCount: refView.validCount
     property real step: 1.0          // шаг сдвига точки, м
     property real hstep: 1.0         // шаг курса, °
 
@@ -704,41 +708,10 @@ ApplicationWindow {
 
             // ================================================ Опорные системы
             Panel {
-                ColumnLayout {
-                    anchors.fill: parent; anchors.margins: 10; spacing: 4
-                    Caption { text: "Датчики и опорные системы" }
-                    ListView {
-                        Layout.fillWidth: true; Layout.fillHeight: true; clip: true
-                        model: core.sensors
-                        delegate: RowLayout {
-                            width: ListView.view.width; spacing: 8
-                            Rectangle { implicitWidth: 10; implicitHeight: 10; radius: 5; color: modelData.valid ? (modelData.state === "OK" || modelData.state === "" ? Theme.ok : Theme.warn) : Theme.alarm }
-                            Label { text: modelData.id; color: Theme.text; Layout.preferredWidth: 80; font.pixelSize: Theme.fsSmall }
-                            Label { text: modelData.kind; color: Theme.dim; Layout.preferredWidth: 90; font.pixelSize: Theme.fsSmall }
-                            // показание датчика: курс и расхождение, ветер в узлах, крен, качество GNSS; состояние — если не «норма»
-                            Label {
-                                readonly property var d: modelData
-                                readonly property string reading: {
-                                    if (!d.valid) return "нет данных"
-                                    if (d.state && d.state !== "OK") return d.state
-                                    if (d.kind === "курс" && d.hdgDeg !== undefined) return Theme.hdg3(d.hdgDeg) + "  Δ " + (Math.abs(d.dHdg) < 0.05 ? "0,0" : (d.dHdg > 0 ? "+" : "") + Theme.num(d.dHdg, 1)) + "°"
-                                    if (d.kind === "ветер" && d.windMs !== undefined) return Theme.bearing(d.windFromRel) + " от носа · " + Theme.num(Theme.knots(d.windMs), 1) + " уз"
-                                    if (d.kind === "качка" && d.roll !== undefined) return "крен " + Theme.num(Math.abs(d.roll), 1) + "° " + (d.roll < 0 ? "ЛБ" : "ПрБ") + " · дифф. " + Theme.num(d.pitch, 1) + "°"
-                                    if (d.kind === "положение") {
-                                        let t = ""
-                                        if (d.gnssQ !== undefined && d.gnssQ >= 0) t = (d.gnssQ === 2 ? "DGPS" : d.gnssQ === 4 ? "RTK" : d.gnssQ === 5 ? "RTK float" : "GPS") + (d.gnssSats >= 0 ? " · " + d.gnssSats + " сп." : "") + (d.gnssHdop >= 0 ? " · HDOP " + Theme.num(d.gnssHdop, 1) : "")
-                                        if (d.sdRep > 0) t += (t ? " · " : "") + "σ " + Theme.num(d.sdRep, 2) + " м"
-                                        return t || "норма"
-                                    }
-                                    return "норма"
-                                }
-                                text: reading
-                                color: !d.valid ? Theme.alarm : (d.state && d.state !== "OK") ? Theme.warn : (d.kind === "курс" && Math.abs(d.dHdg || 0) > 1) ? Theme.warn : Theme.text
-                                Layout.fillWidth: true; font.pixelSize: Theme.fsSmall; font.family: Theme.mono; elide: Text.ElideRight
-                            }
-                            Label { text: modelData.age > 1 ? Theme.num(modelData.age, 1) + " с" : ""; color: modelData.valid ? Theme.dim : Theme.alarm; font.pixelSize: Theme.fsSmall; font.family: Theme.mono }
-                        }
-                    }
+                ReferenceSystemsView {
+                    id: refView
+                    anchors.fill: parent; anchors.margins: 10
+                    sensors: core.sensors; summary: core.s
                 }
             }
 

@@ -13,6 +13,7 @@
 //   --recording-dir <папка> (папка записи на время запуска, в настройки не пишется)
 //   --expect-recording <custom|fallback> (при снимке: выбранная папка / резервная запись с предупреждением; иначе код 9)
 //   --trend-demo (60 минут демонстрационной истории для снимков)  --expect-trend <5|15|60> (после нажатий: окно и число точек; иначе код 8)
+//   --expect-ref <N> (при снимке: четыре группы опорных систем, N строк и N активных датчиков; иначе код 11)
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -33,7 +34,7 @@ int main(int argc, char** argv) {
     app.setApplicationName("SDP HMI");
     app.setOrganizationName("SDP");
     QStringList a = app.arguments();
-    QString shot; int w = 1920, h = 1080; QStringList presses; int expectMode = -1, expectCa = -1, expectFc = -1, expectTrend = -1;
+    QString shot; int w = 1920, h = 1080; QStringList presses; int expectMode = -1, expectCa = -1, expectFc = -1, expectTrend = -1, expectRef = -1;
     QString paletteArg; bool onboardArg = false;   // временно, на время запуска (проверки и снимки); в настройки не пишется
     int tabArg = -1;                               // открыть вкладку (для снимков)
     QString alarmsArg;                             // раскрытый список тревог шапки: A или W (для снимков)
@@ -62,6 +63,7 @@ int main(int argc, char** argv) {
         else if (k == "--expect-ca") expectCa = next().toInt();
         else if (k == "--expect-fc") expectFc = next().toInt();
         else if (k == "--expect-trend") expectTrend = next().toInt();
+        else if (k == "--expect-ref") expectRef = next().toInt();
         else if (k == "--size") { const QStringList p = next().split('x'); if (p.size() == 2) { w = p[0].toInt(); h = p[1].toInt(); } }
         else if (k == "--palette") paletteArg = next();
         else if (k == "--onboard") onboardArg = true;
@@ -123,7 +125,15 @@ int main(int argc, char** argv) {
     if (!shot.isEmpty() && win) {
         if (expectRecording != "fallback") core.setPaused(true);   // при резерве ядро продолжает писать в новый внутренний CSV
         QTimer::singleShot(1500, [&]() {
-            bool fcOk = true, recordingOk = true;
+            bool fcOk = true, recordingOk = true, refOk = true;
+            if (expectRef >= 0) {
+                const int cards = win->property("referenceCardCount").toInt();
+                const int rows = win->property("referenceRowCount").toInt();
+                const int valid = win->property("referenceValidCount").toInt();
+                refOk = cards == 4 && rows == expectRef && valid == expectRef;
+                std::printf("опорные системы: групп=%d; датчиков=%d; активных=%d\n", cards, rows, valid);
+                if (!refOk) std::fprintf(stderr, "ожидалось 4 группы и %d активных датчиков из %d\n", expectRef, expectRef);
+            }
             if (expectFc >= 0) {
                 const bool valid = core.property("s").toMap().value("fcValid").toBool();
                 fcOk = valid == (expectFc != 0);
@@ -144,7 +154,7 @@ int main(int argc, char** argv) {
             const QImage img = win->grabWindow();
             const bool ok = img.save(shot);
             std::fprintf(ok ? stdout : stderr, ok ? "снимок: %s\n" : "не удалось сохранить снимок %s\n", shot.toUtf8().constData());
-            QCoreApplication::exit(!ok ? 2 : !fcOk ? 6 : !exportOk ? 7 : exitPress ? exitPress : qmlWarnings ? 3 : !recordingOk ? 9 : 0);
+            QCoreApplication::exit(!ok ? 2 : !fcOk ? 6 : !exportOk ? 7 : exitPress ? exitPress : qmlWarnings ? 3 : !recordingOk ? 9 : !refOk ? 11 : 0);
         });
     }
     return app.exec();
