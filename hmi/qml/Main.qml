@@ -48,6 +48,10 @@ ApplicationWindow {
         nameFilters: ["Журнал CSV (*.csv)"]; defaultSuffix: "csv"
         onAccepted: core.exportRecording(selectedFile)
     }
+    FolderDialog {
+        id: recordDirDlg; title: "Папка автоматической записи сеансов"
+        onAccepted: core.setRecordingDirectory(selectedFolder)
+    }
 
     // Своё рабочее место: 8 ячеек главного экрана. Порядок id — левый план, три средние и четыре правые ячейки.
     // Режим нельзя скрыть; шапка состояния и строка тревог находятся вне настраиваемой сетки и присутствуют всегда.
@@ -1223,10 +1227,25 @@ ApplicationWindow {
                                 text: (s.recActive === true ? "Запись ведётся автоматически" : "Запись недоступна")
                                       + "\n" + (s.recFile || "Журнал ещё не создан") + " · " + Theme.num((s.recBytes || 0) / 1024, 1) + " КБ"
                             }
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: 6
+                                Btn { text: "Выбрать папку…"; implicitHeight: 32; Layout.fillWidth: true; onClicked: recordDirDlg.open() }
+                                Btn { text: "Внутренняя папка"; implicitHeight: 32; Layout.fillWidth: true; onClicked: core.setRecordingDirectory("") }
+                            }
+                            Label {
+                                Layout.fillWidth: true; wrapMode: Text.WrapAnywhere; font.pixelSize: Theme.fsSmall
+                                color: s.recFallback === true ? Theme.warn : Theme.dim
+                                text: (s.recFallback === true ? "РЕЗЕРВ: внутренняя папка" : (s.recConfiguredDir || "") !== "" ? "Пользовательская папка (можно на флешке)" : "Внутренняя папка")
+                                      + "\n" + (s.recDir || "Папка ещё не открыта")
+                            }
+                            Label {
+                                text: s.recWarning || ""; visible: (s.recWarning || "") !== ""; color: Theme.warn; font.bold: true
+                                font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true
+                            }
                             Btn { text: "Выгрузить CSV"; implicitHeight: 32; Layout.fillWidth: true; enabled: (s.recBytes || 0) > 0; onClicked: recordDlg.open() }
                             Label { text: s.recNotice || ""; visible: (s.recNotice || "") !== ""; color: Theme.accent; font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true }
                             Label { color: Theme.dim; font.pixelSize: Theme.fsSmall; wrapMode: Text.Wrap; Layout.fillWidth: true
-                                    text: "В CSV записываются состояние, режим, положение, курс, ошибки, силы, загрузка и ветер. Выгрузка сохраняет актуальную копию и не останавливает запись. Файл подходит для tools/sdp_report.py." }
+                                    text: "При смене папки начинается новый CSV. Если флешка извлечена или папка недоступна, запись продолжится на внутреннем диске. Возврат на флешку — повторным выбором папки. Выгрузка не останавливает запись; CSV подходит для tools/sdp_report.py." }
                             Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
                             Caption { text: "Параметры управления" }
                             Label {

@@ -38,6 +38,10 @@ if(NOT WIN32)
              -DHMI=$<TARGET_FILE:sdp_hmi> -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_BINARY_DIR}
              -DPYTHON=${Python3_EXECUTABLE} -P ${CMAKE_SOURCE_DIR}/tests/hmi_recording_test.cmake)
     set_tests_properties(hmi_recording PROPERTIES TIMEOUT 120)
+    # выбранная папка, недоступный путь и удаление каталога во время записи; все носители — каталоги в build
+    add_test(NAME hmi_recording_dir COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/hmi_recording_dir_test.py
+             --hmi $<TARGET_FILE:sdp_hmi> --source ${CMAKE_SOURCE_DIR} --build ${CMAKE_BINARY_DIR})
+    set_tests_properties(hmi_recording_dir PROPERTIES TIMEOUT 120)
   endif()
   # пять величин и окна 5/15/60 минут: переключатель и объём истории проверяются для каждого окна
   add_test(NAME hmi_trends COMMAND ${CMAKE_COMMAND}
