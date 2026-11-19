@@ -10,6 +10,7 @@
 //   --alarms <A|W> (раскрыть список тревог из строки шапки: A — аварийные, W — предупреждения; для снимков)
 //   --workspace <full|watch|maneuver> (готовый набор рабочего места на время запуска, в настройки не пишется)
 //   --export-recording <файл.csv> (выгрузить актуальный журнал; при снимке ошибка выгрузки даёт код 7)
+//   --trend-demo (60 минут демонстрационной истории для снимков)  --expect-trend <5|15|60> (после нажатий: окно и число точек; иначе код 8)
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -26,12 +27,12 @@ int main(int argc, char** argv) {
     app.setApplicationName("SDP HMI");
     app.setOrganizationName("SDP");
     QStringList a = app.arguments();
-    QString shot; int w = 1920, h = 1080; QStringList presses; int expectMode = -1, expectCa = -1, expectFc = -1;
+    QString shot; int w = 1920, h = 1080; QStringList presses; int expectMode = -1, expectCa = -1, expectFc = -1, expectTrend = -1;
     QString paletteArg; bool onboardArg = false;   // временно, на время запуска (проверки и снимки); в настройки не пишется
     int tabArg = -1;                               // открыть вкладку (для снимков)
     QString alarmsArg;                             // раскрытый список тревог шапки: A или W (для снимков)
     QString workspaceArg;                          // готовый набор: full, watch или maneuver (для проверок и снимков)
-    bool exportOk = true;
+    bool exportOk = true, trendDemo = false;
     HmiCore core;
     for (int i = 1; i < a.size(); ++i) {
         auto next = [&]() { return i + 1 < a.size() ? a[++i] : QString(); };
@@ -45,12 +46,14 @@ int main(int argc, char** argv) {
         else if (k == "--expect-mode") expectMode = next().toInt();
         else if (k == "--expect-ca") expectCa = next().toInt();
         else if (k == "--expect-fc") expectFc = next().toInt();
+        else if (k == "--expect-trend") expectTrend = next().toInt();
         else if (k == "--size") { const QStringList p = next().split('x'); if (p.size() == 2) { w = p[0].toInt(); h = p[1].toInt(); } }
         else if (k == "--palette") paletteArg = next();
         else if (k == "--onboard") onboardArg = true;
         else if (k == "--tab") tabArg = next().toInt();
         else if (k == "--alarms") alarmsArg = next();
         else if (k == "--workspace") workspaceArg = next();
+        else if (k == "--trend-demo") trendDemo = true;
         else if (k == "--export-recording") {
             const QString path = next(); exportOk = core.exportRecording(path);
             std::fprintf(exportOk ? stdout : stderr, exportOk ? "запись выгружена: %s\n" : "не удалось выгрузить запись: %s\n", path.toUtf8().constData());
@@ -66,6 +69,7 @@ int main(int argc, char** argv) {
     eng.rootContext()->setContextProperty("cliOnboard", onboardArg);
     eng.rootContext()->setContextProperty("cliAlarmsExpand", alarmsArg);
     eng.rootContext()->setContextProperty("cliWorkspace", workspaceArg);
+    eng.rootContext()->setContextProperty("cliTrendDemo", trendDemo);
     eng.load(QUrl("qrc:/qml/Main.qml"));
     if (eng.rootObjects().isEmpty()) return 1;
     auto* win = qobject_cast<QQuickWindow*>(eng.rootObjects().first());
@@ -90,6 +94,12 @@ int main(int argc, char** argv) {
             if (expectMode >= 0 && m != expectMode) { std::fprintf(stderr, "ожидался режим %d\n", expectMode); exitPress = 4; }
             const int ca = core.property("s").toMap().value("caClass").toInt();
             if (expectCa >= 0 && ca != expectCa) { std::fprintf(stderr, "ожидался класс анализа последствий %d, а не %d\n", expectCa, ca); exitPress = 4; }
+            if (expectTrend >= 0) {
+                const int tw = win->property("trendWin").toInt(), points = win->property("trendPoints").toInt();
+                if (tw != expectTrend || (trendDemo && points != expectTrend * 60)) {
+                    std::fprintf(stderr, "ожидалось окно трендов %d мин и %d точек, получено %d мин и %d точек\n", expectTrend, expectTrend * 60, tw, points); exitPress = 8;
+                }
+            }
             if (shot.isEmpty()) QCoreApplication::exit(exitPress ? exitPress : qmlWarnings ? 3 : 0);
         });
     }

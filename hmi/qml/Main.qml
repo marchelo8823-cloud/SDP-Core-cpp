@@ -126,7 +126,7 @@ ApplicationWindow {
         try { setWorkspace(JSON.parse(raw), kind === "station" ? "Пост" : "Оператор") }
         catch (e) { workspaceNotice = "Сохранённая раскладка повреждена — выберите готовый набор" }
     }
-    Component.onCompleted: applyWorkspace()
+    Component.onCompleted: { applyWorkspace(); if (cliTrendDemo) fillTrendDemo() }
     onActiveWorkspaceChanged: Qt.callLater(applyWorkspace)
 
     component Panel: Rectangle { color: Theme.panel; radius: 3; clip: true }
@@ -199,23 +199,41 @@ ApplicationWindow {
     property string expandAlm: cliAlarmsExpand      // "" | "A" | "W" — раскрытый список строки тревог
     function fmtT(t) { return "t+" + Theme.num(t, 0) + " с" }
 
-    // история для трендов: раз в секунду, 60 минут
-    property var hist: ({ err: [], load: [], wind: [], pow: [] })
+    // история для трендов: раз в секунду, 60 минут; возмущение — модуль оценки неизвестной силы
+    property var hist: ({ err: [], hdg: [], load: [], wind: [], dist: [], pow: [] })
     property int trendWin: 15        // окно трендов, минут (5/15/60)
+    readonly property int trendPoints: { histTick; return Math.min(hist.err.length, trendWin * 60) }
     property int histTick: 0         // счётчик секунд — перерисовка мини-тренда мощности
     readonly property real powerMax: core.thrusters.reduce((a, t) => a + (t.powerMaxKW || 0), 0)   // установленная мощность, кВт
     Timer {
-        interval: 1000; running: true; repeat: true
+        interval: 1000; running: !cliTrendDemo; repeat: true
         onTriggered: {
             const h = win.hist
             h.err.push(s.posValid ? s.errDist : NaN)
+            h.hdg.push(s.hdgValid ? s.hdg : NaN)
             h.load.push(s.hasShip ? (s.load || 0) * 100 : NaN)
             h.wind.push(s.windValid ? Theme.knots(s.windSpeed) : NaN)
+            h.dist.push(s.posValid ? Math.hypot(s.distN || 0, s.distE || 0) / 1000 : NaN)
             h.pow.push(s.hasShip ? s.powerKW || 0 : NaN)
-            if (h.err.length > 3600) { h.err.shift(); h.load.shift(); h.wind.shift(); h.pow.shift() }
+            if (h.err.length > 3600) {
+                h.err.shift(); h.hdg.shift(); h.load.shift(); h.wind.shift(); h.dist.shift(); h.pow.shift()
+            }
             win.histTick++
             win.repaintTrends()
         }
+    }
+    // Детерминированные 60 минут только для проверок и снимков; на судне cliTrendDemo не задаётся.
+    function fillTrendDemo() {
+        const h = win.hist
+        for (let i = 0; i < 3600; ++i) {
+            h.err.push(Math.max(0, 2.0 + 1.2 * Math.sin(i / 97) + 0.4 * Math.cos(i / 31)))
+            h.hdg.push(((350 + i * 0.08 + 12 * Math.sin(i / 140)) % 360 + 360) % 360)
+            h.load.push(Math.max(0, Math.min(100, 45 + 20 * Math.sin(i / 180) + 8 * Math.cos(i / 47))))
+            h.wind.push(18 + 5 * Math.sin(i / 210) + 2 * Math.cos(i / 53))
+            h.dist.push(Math.max(0, 30 + 12 * Math.sin(i / 160) + 4 * Math.cos(i / 43)))
+            h.pow.push(500 + 120 * Math.sin(i / 180))
+        }
+        win.histTick++; win.repaintTrends()
     }
     function repaintTrends() { for (const c of trendCol.children) if (c.cv) c.cv.requestPaint() }
 
@@ -728,22 +746,24 @@ ApplicationWindow {
                     RowLayout {
                         Layout.fillWidth: true
                         Caption { text: "Тренды"; Layout.fillWidth: true }
-                        Repeater {
-                            model: [5, 15, 60]
-                            Btn { text: modelData + " мин"; implicitHeight: 26; highlighted: win.trendWin === modelData
-                                  onClicked: { win.trendWin = modelData; win.repaintTrends() } }
-                        }
+                        Btn { text: "5 мин"; implicitHeight: 26; highlighted: win.trendWin === 5
+                              onClicked: { win.trendWin = 5; win.repaintTrends() } }
+                        Btn { text: "15 мин"; implicitHeight: 26; highlighted: win.trendWin === 15
+                              onClicked: { win.trendWin = 15; win.repaintTrends() } }
+                        Btn { text: "60 мин"; implicitHeight: 26; highlighted: win.trendWin === 60
+                              onClicked: { win.trendWin = 60; win.repaintTrends() } }
                     }
                     ColumnLayout {
                         id: trendCol
                         Layout.fillWidth: true; Layout.fillHeight: true; spacing: 4
-                        // четыре тренда: отклонение от точки, загрузка движителей, ветер, мощность
+                        // пять трендов дорожной карты; мощность остаётся мини-трендом на главном экране
                         Repeater {
                             model: [
                                 { title: "Отклонение от точки, м", key: "err", fixedMax: 0 },
+                                { title: "Курс, °", key: "hdg", fixedMax: 360 },
                                 { title: "Загрузка движителей, %", key: "load", fixedMax: 100 },
                                 { title: "Ветер, уз", key: "wind", fixedMax: 0 },
-                                { title: "Мощность, кВт", key: "pow", fixedMax: 0 }
+                                { title: "Возмущение (оценка), кН", key: "dist", fixedMax: 0 }
                             ]
                             delegate: ColumnLayout {
                                 Layout.fillWidth: true; Layout.fillHeight: true; spacing: 0
@@ -754,8 +774,8 @@ ApplicationWindow {
                                     Layout.fillWidth: true; Layout.fillHeight: true
                                     onPaint: {
                                         const g = getContext("2d"); g.reset()
-                                        const W = width, H = height
-                                        const a = win.hist[modelData.key], n = Math.min(a.length, win.trendWin * 60)
+                                        const W = width, H = height, total = win.trendWin * 60
+                                        const a = win.hist[modelData.key], n = Math.min(a.length, total)
                                         g.fillStyle = Theme.dim; g.font = Theme.cfont(10, false, true)
                                         if (n < 2) { g.textAlign = "center"; g.fillText("история набирается…", W / 2, height / 2); return }
                                         let mx = modelData.fixedMax
@@ -769,13 +789,14 @@ ApplicationWindow {
                                         }
                                         g.textAlign = "right"; g.fillText("−" + win.trendWin + " мин", 34 + 46, H - 3)
                                         g.fillText("сейчас", W - 4, H - 3)
-                                        // линия
-                                        g.strokeStyle = Theme.accent; g.lineWidth = 1.5; g.beginPath()
+                                        // линия: неполная история прижата вправо, ко всей ширине не растягивается
+                                        g.strokeStyle = modelData.key === "dist" ? Theme.dist : modelData.key === "wind" ? Theme.wind : Theme.accent
+                                        g.lineWidth = 1.5; g.beginPath()
                                         let started = false
                                         for (let i = 0; i < n; ++i) {
                                             const v = a[a.length - n + i]
                                             if (isNaN(v)) { started = false; continue }
-                                            const x = 34 + (W - 38) * i / (n - 1), y = 4 + (H - 16) * (1 - v / mx)
+                                            const x = 34 + (W - 38) * (total - n + i) / (total - 1), y = 4 + (H - 16) * (1 - v / mx)
                                             if (started) g.lineTo(x, y); else g.moveTo(x, y)
                                             started = true
                                         }
