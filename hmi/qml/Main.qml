@@ -245,7 +245,13 @@ ApplicationWindow {
         }
         win.histTick++; win.repaintTrends()
     }
-    function repaintTrends() { for (const c of trendCol.children) if (c.cv) c.cv.requestPaint() }
+    function repaintTrends() {
+        // В Qt 6.4 children ещё не поддерживает for…of; индексный обход работает во всех поддерживаемых версиях.
+        for (let i = 0; i < trendCol.children.length; ++i) {
+            const c = trendCol.children[i]
+            if (c.cv) c.cv.requestPaint()
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 6; spacing: 6
