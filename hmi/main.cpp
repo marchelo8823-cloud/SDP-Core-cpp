@@ -41,7 +41,15 @@ int main(int argc, char** argv) {
     for (int i = 1; i < a.size(); ++i) {
         auto next = [&]() { return i + 1 < a.size() ? a[++i] : QString(); };
         const QString k = a[i];
-        if (k == "--ship") core.loadShip(next());
+        if (k == "--ship") {
+            core.loadShip(next());
+            if (!core.property("s").toMap().value("hasShip").toBool()) {
+                const QStringList log = core.property("log").toStringList();
+                for (auto it = log.crbegin(); it != log.crend(); ++it) std::fprintf(stderr, "%s\n", it->toUtf8().constData());
+                std::fprintf(stderr, "Не удалось загрузить судно, переданное ключом --ship\n");
+                return 10;
+            }
+        }
         else if (k == "--sim") core.simStart(next());
         else if (k == "--cmd") core.command(next());
         else if (k == "--run") core.runFor(next().toDouble());
