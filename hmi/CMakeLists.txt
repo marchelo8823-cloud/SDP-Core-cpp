@@ -48,6 +48,11 @@ if(NOT WIN32)
            -DHMI=$<TARGET_FILE:sdp_hmi> -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_BINARY_DIR}
            -P ${CMAKE_SOURCE_DIR}/tests/hmi_trends_test.cmake)
   set_tests_properties(hmi_trends PROPERTIES TIMEOUT 120)
+  # опорные системы: четыре группы, активные датчики, источники решения и три палитры на 1366×768
+  add_test(NAME hmi_references COMMAND ${CMAKE_COMMAND}
+           -DHMI=$<TARGET_FILE:sdp_hmi> -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_BINARY_DIR}
+           -P ${CMAKE_SOURCE_DIR}/tests/hmi_references_test.cmake)
+  set_tests_properties(hmi_references PROPERTIES TIMEOUT 120)
   # подтверждение смены режима (РС ч. XV 8.5.7): одно нажатие «Ожидание» режим не снимает, второе подряд — снимает
   foreach(n 1 2)
     set(pr "")
